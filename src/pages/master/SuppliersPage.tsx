@@ -1088,14 +1088,14 @@ export default function SuppliersPage() {
   const { data: perfumesData } = useApiQuery(api.master.perfumes);
   const { data: posData, refetch: refetchPOs } = useApiQuery(api.purchaseOrders.list);
 
-  const suppliers = useMemo(() => suppliersData?.data || [], [suppliersData]);
-  const brands = useMemo(() => (brandsData?.data || []).map((b: any) => ({
+  const suppliers = useMemo(() => suppliersData || [], [suppliersData]);
+  const brands = useMemo(() => (brandsData || []).map((b: any) => ({
     brand_id: b.brand_id || b.brandId,
     name: b.name,
     logo_url: b.logo_url || b.logoUrl,
   })), [brandsData]);
-  const perfumes = useMemo(() => perfumesData?.data || [], [perfumesData]);
-  const allPOs = useMemo(() => posData?.data || [], [posData]);
+  const perfumes = useMemo(() => perfumesData || [], [perfumesData]);
+  const allPOs = useMemo(() => posData || [], [posData]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');

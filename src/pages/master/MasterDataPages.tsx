@@ -344,8 +344,19 @@ export function FragranceFamilies() {
   const [familyForm, setFamilyForm] = useState<Partial<Family>>({});
   const [subForm, setSubForm] = useState<Partial<SubFamily>>({});
 
-  const families = (familiesQuery.data || []) as Family[];
-  const subs = (subFamiliesQuery.data || []) as SubFamily[];
+  const [localFamilies, setLocalFamilies] = useState<Family[]>([]);
+  const [localSubs, setLocalSubs] = useState<SubFamily[]>([]);
+
+  useEffect(() => {
+    if (familiesQuery.data) setLocalFamilies(familiesQuery.data as Family[]);
+  }, [familiesQuery.data]);
+
+  useEffect(() => {
+    if (subFamiliesQuery.data) setLocalSubs(subFamiliesQuery.data as SubFamily[]);
+  }, [subFamiliesQuery.data]);
+
+  const families = localFamilies;
+  const subs = localSubs;
 
   const FAMILY_ICONS: Record<string, React.ReactNode> = {
     FRESH: <Wind className="w-5 h-5" />, FLORAL: <Flower2 className="w-5 h-5" />,

@@ -178,7 +178,6 @@ export const api = {
     },
   },
   master: {
-    filterTags: async () => wrapList<any>([]),
     notes: {
       post: async (payload: any) => apiPost<any>('/notes', payload),
       list: async () => {
@@ -202,14 +201,30 @@ export const api = {
         return wrapList(mock.mockPerfumes);
       }
     },
-    auras: async () => {
+    brands: async () => {
+      try {
+        const rows = await apiGet<any[]>('/brands');
+        return wrapList(rows.map(mapBrand));
+      } catch (e) {
+        return wrapList([]);
+      }
+    },
+    auras: Object.assign(async () => {
       try {
         const rows = await apiGet<any[]>('/master-data/auras');
         return wrapList(rows);
       } catch (e) {
         return wrapList(mock.mockAuras);
       }
-    },
+    }, {
+      list: async () => wrapList([]),
+      create: async (d: any) => wrapOne(d),
+      delete: async (id: string) => wrapOne({ id }),
+    }),
+    filterTags: Object.assign(async () => wrapList([]), {
+      list: async () => wrapList([]),
+      create: async (d: any) => wrapOne(d),
+    }),
     families: async () => {
       try {
         const rows = await apiGet<any[]>('/master-data/families');
@@ -251,16 +266,20 @@ export const api = {
       }
     },
     packagingSKUs: async (): Promise<ApiListResponse<PackagingSKU>> => {
-      const rows = await apiGet<any[]>('/packaging-skus?limit=500');
+      const rows = await apiGet<any[]>('/packaging-skus/list');
       return wrapList(rows.map(mapPackagingSku));
     },
-    brands: async () => {
-      try {
-        const rows = await apiGet<any[]>('/brands');
-        return wrapList(rows.map(mapBrand));
-      } catch (e) {
-        return wrapList([]);
-      }
+    pricingRules: {
+      list: async () => wrapList([]),
+    },
+    pricing: {
+      list: async () => wrapList([]),
+      update: async (id: string, d: any) => wrapOne(d),
+      create: async (d: any) => wrapOne(d),
+      delete: async (id: string) => wrapOne({ id }),
+    },
+    supplierBrands: {
+      list: async () => wrapList([]),
     },
   },
   inventory: {
@@ -288,14 +307,70 @@ export const api = {
         return wrapOne([]);
       }
     },
+    reconciliation: {
+      list: async () => wrapList([]),
+      create: async (d: any) => wrapOne(d),
+      stats: async () => wrapOne({}),
+    },
+    alerts: {
+      list: async () => wrapList([]),
+    },
+    syringes: {
+      list: async () => wrapList([]),
+    },
+  },
+  potm: {
+    list: async () => wrapList([]),
+    create: async (d: any) => wrapOne(d),
+    update: async (id: string, d: any) => wrapOne(d),
+    delete: async (id: string) => wrapOne({ id }),
   },
   capsules: {
     stats: async () => wrapOne({ totalDrops: 0, liveDrops: 0, totalSold: 0, totalRevenue: 0, sellThrough: 0 }),
     listDrops: async () => wrapList([]),
+    createDrop: async (d: any) => wrapOne(d),
+    deleteDrop: async (id: string) => wrapOne({ id }),
+    updateDrop: async (id: string, d: any) => wrapOne(d),
+    addItem: async (id: string, d: any) => wrapOne(d),
+    removeItem: async (id: string, itemId: string) => wrapOne({ id, itemId }),
   },
   emVault: {
     stats: async () => wrapOne({ totalReleases: 0, liveReleases: 0, totalSold: 0, totalRevenue: 0, totalRequests: 0 }),
     listReleases: async () => wrapList([]),
+    createRelease: async (d: any) => wrapOne(d),
+    deleteRelease: async (id: string) => wrapOne({ id }),
+    updateRelease: async (id: string, d: any) => wrapOne(d),
+    addItem: async (id: string, d: any) => wrapOne(d),
+    removeItem: async (id: string, itemId: string) => wrapOne({ id, itemId }),
+    listAccessRequests: async () => wrapList([]),
+    resolveAccessRequest: async (id: string, d: any) => wrapOne(d),
+  },
+  gifting: {
+    list: async () => wrapList([]),
+    stats: async () => wrapOne({}),
+    corporate: async () => wrapList([]),
+    giftCards: async () => wrapList([]),
+    giftSubscriptions: async () => wrapList([]),
+  },
+  procurement: {
+    purchaseOrders: {
+      list: async () => wrapList([]),
+      nextNumber: async () => wrapOne({ number: 'PO-001' }),
+      create: async (d: any) => wrapOne(d),
+      get: async (id: string) => wrapOne({}),
+      updateStatus: async (id: string, s: string) => wrapOne({ id, s }),
+      confirmDelivery: async (id: string) => wrapOne({ id }),
+      attachments: async (id: string) => wrapList([]),
+    },
+    packagingPOs: {
+      list: async () => wrapList([]),
+      create: async (d: any) => wrapOne(d),
+      get: async (id: string) => wrapOne({}),
+      updateStatus: async (id: string, s: string) => wrapOne({ id, s }),
+      confirmDelivery: async (id: string) => wrapOne({ id }),
+      cancel: async (id: string) => wrapOne({ id }),
+      recordPayment: async (id: string, d: any) => wrapOne(d),
+    },
   },
   orders: {
     list: async (): Promise<ApiListResponse<Order>> => {
@@ -468,6 +543,14 @@ export const api = {
         return wrapList([]);
       }
     },
+    nextNumber: async (): Promise<number> => {
+      try {
+        const res = await apiGet<{ next: number }>('/purchase-orders/next-number');
+        return res.next || Date.now();
+      } catch {
+        return Date.now();
+      }
+    },
   },
   mutations: {
     perfumes: {
@@ -479,6 +562,20 @@ export const api = {
       create: (data: any) => apiPost('/orders', data),
       update: (id: string, data: any) => apiPut(`/orders/${id}`, data),
       delete: (id: string) => apiDelete(`/orders/${id}`),
+      bulkUpdateStatus: async (ids: string[], status: string) => wrapOne({ ids, status }),
+      bulkMarkPaid: async (ids: string[]) => wrapOne({ ids }),
+      uploadInvoice: async (orderId: string, file: any) => wrapOne({ orderId }),
+      approveInvoice: async (orderId: string) => wrapOne({ orderId }),
+      receiveBulk: async (orderId: string) => wrapOne({ orderId }),
+      extractInvoicePrices: async (orderId: string) => wrapOne({ orderId }),
+      updateItemPrices: async (orderId: string, items: any[]) => wrapOne({ orderId }),
+      confirmDelivery: async (orderId: string) => wrapOne({ orderId }),
+      addAttachment: async (orderId: string, d: any) => wrapOne({ orderId }),
+      deleteAttachment: async (orderId: string, attachmentId: string) => wrapOne({ orderId, attachmentId }),
+      uploadDocument: async (orderId: string, d: any) => wrapOne({ orderId }),
+      recordPayment: async (orderId: string, d: any) => wrapOne({ orderId }),
+      cancel: async (orderId: string) => wrapOne({ orderId }),
+      setDeliveryDate: async (orderId: string, date: string) => wrapOne({ orderId, date }),
     },
     bottles: {
       create: (data: any) => apiPost('/inventory/bottles', data),
@@ -514,11 +611,13 @@ export const api = {
       create: async (data: any) => apiPost('/purchase-orders', data),
       update: async (id: string, data: any) => apiPut(`/purchase-orders/${id}`, data),
       delete: async (id: string) => apiDelete(`/purchase-orders/${id}`),
+      cancel: async (id: string, reason: string) => apiPost(`/purchase-orders/${id}/cancel`, { reason }),
       uploadInvoice: async (id: string, file: any) => Promise.resolve(),
       approveInvoice: async (id: string, payload: any) => Promise.resolve(),
       receiveBulk: async (id: string, payload: any) => Promise.resolve(),
     },
     subscriptionCycles: {
+      update: async (id: string, d: any) => apiPut(`/subscription-cycles/${id}`, d),
       updateStatus: async (id: string, status: string) => Promise.resolve(),
     },
     packagingSkus: {
@@ -543,18 +642,18 @@ export const api = {
     },
     taxonomies: {
       auras: {
-        create: async (data: any) => apiPost('/master-data/auras', data),
-        update: async (id: string, data: any) => apiPut(`/master-data/auras/${id}`, data),
+        create: async (d: any) => apiPost('/master-data/auras', d),
+        update: async (id: string, d: any) => apiPut(`/master-data/auras/${id}`, d),
         delete: async (id: string) => apiDelete(`/master-data/auras/${id}`),
       },
       families: {
-        create: async (data: any) => apiPost('/master-data/families', data),
-        update: async (id: string, data: any) => apiPut(`/master-data/families/${id}`, data),
+        create: async (d: any) => apiPost('/master-data/families', d),
+        update: async (id: string, d: any) => apiPut(`/master-data/families/${id}`, d),
         delete: async (id: string) => apiDelete(`/master-data/families/${id}`),
       },
       subFamilies: {
-        create: async (data: any) => apiPost('/master-data/sub-families', data),
-        update: async (id: string, data: any) => apiPut(`/master-data/sub-families/${id}`, data),
+        create: async (d: any) => apiPost('/master-data/sub-families', d),
+        update: async (id: string, d: any) => apiPut(`/master-data/sub-families/${id}`, d),
         delete: async (id: string) => apiDelete(`/master-data/sub-families/${id}`),
       },
     },

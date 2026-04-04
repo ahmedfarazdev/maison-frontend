@@ -144,6 +144,8 @@ export interface SubFamily {
   scent_story: string;
   key_notes: string[];
   mood_tags: string[];
+  prominent_notes?: string;
+  display_order?: number;
 }
 
 export interface FilterConfig {
