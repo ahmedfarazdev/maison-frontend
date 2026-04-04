@@ -83,7 +83,7 @@ export default function DayTracker() {
   const { user, hasRole } = useAuth();
   const isManager = hasRole(...MANAGER_ROLES);
   const isOperator = hasRole(...OPERATOR_ROLES);
-  const userName = user?.name?.split(' ')[0] || 'Operator';
+  const userName = user?.fullName?.split(' ')[0] || 'Operator';
 
   const { data: jobsRes } = useApiQuery(() => api.jobs.list(), []);
   const { data: ordersRes } = useApiQuery(() => api.orders.list(), []);

@@ -11,7 +11,7 @@ import { PageHeader, StatusBadge, SectionCard } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { mockPerfumes } from '@/lib/mock-data';
-import { useLocations, updateLocations } from '@/lib/inventory-store';
+import { useLocations } from '@/hooks/useLocations';
 import { api } from '@/lib/api-client';
 import type { VaultLocation, LocationType, InventoryBottle, DecantBottle } from '@/types';
 import { toast } from 'sonner';
@@ -20,8 +20,19 @@ import {
   MapPin, Plus, Search, ChevronDown, ChevronRight, Grid3X3,
   Package, Droplets, Box, Layers, X, Check, Edit2, Trash2,
   ArrowRight, Download, LayoutGrid, List, AlertTriangle,
-  Wine, ChevronLeft, Scan, Hash,
+  Wine, ChevronLeft, Scan, Hash, Loader2
 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 // ---- Constants ----
 const VAULT_NAMES = ['Main', 'Decant', 'Staging'] as const;
@@ -121,10 +132,11 @@ function SlotCell({ loc, onClick }: { loc: VaultLocation; onClick: (loc: VaultLo
 }
 
 // ---- Add Zone Dialog ----
-function AddZoneDialog({ onAdd, onClose, existingZones }: {
+function AddZoneDialog({ onAdd, onClose, existingZones, isCreating }: {
   onAdd: (locs: VaultLocation[]) => void;
   onClose: () => void;
   existingZones: ZoneGroup[];
+  isCreating?: boolean;
 }) {
   const [vault, setVault] = useState<string>('Main');
   const [zoneId, setZoneId] = useState('');
@@ -238,10 +250,11 @@ function AddZoneDialog({ onAdd, onClose, existingZones }: {
           </div>
         </div>
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-border">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={isCreating}>Cancel</Button>
           <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={handleSubmit}
-            disabled={!zoneId.trim()}>
-            <Plus className="w-3.5 h-3.5" /> Create Zone
+            disabled={!zoneId.trim() || isCreating}>
+            {isCreating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+            {isCreating ? 'Creating...' : 'Create Zone'}
           </Button>
         </div>
       </div>
@@ -250,10 +263,14 @@ function AddZoneDialog({ onAdd, onClose, existingZones }: {
 }
 
 // ---- Assign Bottle Dialog (click on existing slot) ----
-function AssignBottleDialog({ location, onAssign, onClear, onClose }: {
+function AssignBottleDialog({ location, onAssign, onClear, onDelete, isAssigning, isClearing, isDeleting, onClose }: {
   location: VaultLocation;
   onAssign: (locId: string, bottleId: string, masterId: string, perfumeName: string) => void;
   onClear: (locId: string) => void;
+  onDelete: (locId: string) => void;
+  isAssigning?: boolean;
+  isClearing?: boolean;
+  isDeleting?: boolean;
   onClose: () => void;
 }) {
   const [search, setSearch] = useState('');
@@ -343,10 +360,30 @@ function AssignBottleDialog({ location, onAssign, onClear, onClose }: {
                 <p className="text-[11px] font-mono text-muted-foreground mt-0.5">{location.master_id || '—'}</p>
                 {location.bottle_id && <p className="text-[11px] font-mono text-muted-foreground">Bottle: {location.bottle_id}</p>}
               </div>
-              <Button variant="outline" className="w-full gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/5"
-                onClick={() => { onClear(location.location_id); onClose(); }}>
-                <Trash2 className="w-3.5 h-3.5" /> Clear Slot
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" className="w-full gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/5"
+                    disabled={isClearing}>
+                    {isClearing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                    {isClearing ? 'Clearing...' : 'Clear Slot'}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Clear Slot Contents</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to clear this vault slot? This will disconnect the bottle from this location.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={isClearing}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => onClear(location.id ?? location.location_id)} disabled={isClearing} className="bg-destructive hover:bg-destructive/90">
+                      {isClearing ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
+                      {isClearing ? 'Clearing...' : 'Clear Slot'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           ) : (
             <div className="space-y-4">
@@ -395,18 +432,43 @@ function AssignBottleDialog({ location, onAssign, onClear, onClose }: {
           )}
         </div>
         {!location.occupied && (
-          <div className="flex justify-end gap-3 px-6 py-4 border-t border-border">
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5"
-              disabled={!selectedBottle}
-              onClick={() => {
-                if (selectedBottle) {
-                  onAssign(location.location_id, selectedBottle.bottle_id, selectedBottle.master_id, getPerfumeName(selectedBottle.master_id));
-                  onClose();
-                }
-              }}>
-              <Check className="w-3.5 h-3.5" /> Assign
-            </Button>
+          <div className="flex items-center justify-between px-6 py-4 border-t border-border">
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" className="text-destructive border-destructive/30 hover:bg-destructive/5 gap-1.5" disabled={isDeleting}>
+                  {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  {isDeleting ? 'Deleting...' : 'Delete Slot'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete Location Slot</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to permanently delete this empty vault slot? This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => onDelete(location.id ?? location.location_id)} disabled={isDeleting} className="bg-destructive hover:bg-destructive/90">
+                    {isDeleting ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
+                    {isDeleting ? 'Deleting...' : 'Delete Slot'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={onClose} disabled={isAssigning || isDeleting}>Cancel</Button>
+              <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5"
+                disabled={!selectedBottle || isAssigning || isDeleting}
+                onClick={() => {
+                  if (selectedBottle) {
+                    onAssign(location.id ?? location.location_id, selectedBottle.bottle_id, selectedBottle.master_id, getPerfumeName(selectedBottle.master_id));
+                  }
+                }}>
+                {isAssigning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                {isAssigning ? 'Assigning...' : 'Assign'}
+              </Button>
+            </div>
           </div>
         )}
       </div>
@@ -883,12 +945,8 @@ function exportLocationsCsv(locations: VaultLocation[]) {
 
 // ---- Main Page ----
 export default function VaultLocationsPage() {
-  const storeLocations = useLocations();
-  const [locations, setLocations] = useState<VaultLocation[]>([...storeLocations]);
-  const syncToStore = useCallback((locs: VaultLocation[]) => {
-    setLocations(locs);
-    updateLocations(locs);
-  }, []);
+  const { locationsQuery, createLocation, updateLocation, clearLocation, deleteLocation } = useLocations();
+  const locations = locationsQuery.data || [];
   const [searchTerm, setSearchTerm] = useState('');
   const [filterVault, setFilterVault] = useState<string>('all');
   const [filterType, setFilterType] = useState<string>('all');
@@ -934,38 +992,74 @@ export default function VaultLocationsPage() {
     });
   };
 
-  // Actions
-  const handleAddZone = useCallback((newLocs: VaultLocation[]) => {
-    setLocations(prev => {
-      const updated = [...prev, ...newLocs];
-      updateLocations(updated);
-      return updated;
-    });
-  }, []);
+  const resolveLocationMutationId = useCallback((inputId: string): string | null => {
+    const byUuid = locations.find((loc) => loc.id === inputId);
+    if (byUuid?.id) {
+      return byUuid.id;
+    }
 
-  const handleAssignBottle = useCallback((locId: string, bottleId: string, masterId: string, perfumeName: string) => {
-    setLocations(prev => {
-      const updated = prev.map(l =>
-        l.location_id === locId ? { ...l, occupied: true, bottle_id: bottleId, master_id: masterId, perfume_name: perfumeName } : l
-      );
-      updateLocations(updated);
-      return updated;
-    });
-    // Also update the bottle's location_code in the DB
-    api.mutations.bottles.update(bottleId, { locationCode: locations.find(l => l.location_id === locId)?.location_code || '' }).catch(() => {});
-    toast.success(`Bottle ${bottleId} assigned to location`);
+    const byBusinessId = locations.find((loc) => loc.location_id === inputId);
+    if (byBusinessId?.id) {
+      return byBusinessId.id;
+    }
+
+    return null;
   }, [locations]);
 
-  const handleClearSlot = useCallback((locId: string) => {
-    setLocations(prev => {
-      const updated = prev.map(l =>
-        l.location_id === locId ? { ...l, occupied: false, bottle_id: undefined, master_id: undefined, perfume_name: undefined } : l
-      );
-      updateLocations(updated);
-      return updated;
+  // Actions
+  const handleAddZone = useCallback((newLocs: VaultLocation[]) => {
+    createLocation.mutate(newLocs, {
+      onSuccess: () => setShowAddZone(false)
     });
-    toast.success('Slot cleared');
-  }, []);
+  }, [createLocation]);
+
+  const handleAssignBottle = useCallback((locId: string, bottleId: string, masterId: string, perfumeName: string) => {
+    const resolvedId = resolveLocationMutationId(locId);
+    if (!resolvedId) {
+      toast.error('Unable to assign bottle: invalid location ID');
+      return;
+    }
+
+    updateLocation.mutate({
+      id: resolvedId,
+      data: { occupied: true, bottle_id: bottleId, master_id: masterId, perfume_name: perfumeName }
+    }, {
+      onSuccess: () => {
+        // Also update the bottle's location_code in the DB
+        const locationCode = locations.find((l) => l.id === resolvedId)?.location_code || '';
+        api.mutations.bottles.update(bottleId, { locationCode }).catch(() => {});
+        setSelectedSlot(null);
+      }
+    });
+  }, [updateLocation, locations, resolveLocationMutationId]);
+
+  const handleClearSlot = useCallback((locId: string) => {
+    const resolvedId = resolveLocationMutationId(locId);
+    if (!resolvedId) {
+      toast.error('Unable to clear slot: invalid location ID');
+      return;
+    }
+
+    clearLocation.mutate(resolvedId, {
+      onSuccess: () => {
+        setSelectedSlot(null);
+      }
+    });
+  }, [clearLocation, resolveLocationMutationId]);
+
+  const handleDeleteLocation = useCallback((locId: string) => {
+    const resolvedId = resolveLocationMutationId(locId);
+    if (!resolvedId) {
+      toast.error('Unable to delete slot: invalid location ID');
+      return;
+    }
+
+    deleteLocation.mutate(resolvedId, {
+      onSuccess: () => {
+        setSelectedSlot(null);
+      }
+    });
+  }, [deleteLocation, resolveLocationMutationId]);
 
   const handleAutoAssign = useCallback(() => {
     const nextEmpty = locations.find(l => !l.occupied && l.type === 'sealed');
@@ -983,25 +1077,21 @@ export default function VaultLocationsPage() {
     locationId: string;
     locationCode: string;
   }) => {
-    // Update local location state
-    setLocations(prev => prev.map(l =>
-      l.location_id === data.locationId
-        ? {
-            ...l,
-            occupied: true,
-            bottle_id: data.bottle.bottle_id,
-            master_id: data.bottle.master_id,
-            perfume_name: getPerfumeName(data.bottle.master_id),
-          }
-        : l
-    ));
-    // Update the bottle's location_code in the DB
-    api.mutations.bottles.update(data.bottle.bottle_id, { locationCode: data.locationCode }).catch(() => {});
-    toast.success(
-      `Bottle ${data.bottle.bottle_id} assigned to ${data.locationCode}`,
-      { description: `${getPerfumeName(data.bottle.master_id)} · ${data.bottle.size_ml}ml` }
-    );
-  }, []);
+    updateLocation.mutate({
+      id: data.locationId,
+      data: {
+        occupied: true,
+        bottle_id: data.bottle.bottle_id,
+        master_id: data.bottle.master_id,
+        perfume_name: getPerfumeName(data.bottle.master_id),
+      }
+    }, {
+      onSuccess: () => {
+        api.mutations.bottles.update(data.bottle.bottle_id, { locationCode: data.locationCode }).catch(() => {});
+        setShowAddBottle(false);
+      }
+    });
+  }, [updateLocation]);
 
   // Stats per vault
   const vaultStats = useMemo(() => {
@@ -1237,13 +1327,17 @@ export default function VaultLocationsPage() {
 
       {/* Dialogs */}
       {showAddZone && (
-        <AddZoneDialog onAdd={handleAddZone} onClose={() => setShowAddZone(false)} existingZones={zones} />
+        <AddZoneDialog onAdd={handleAddZone} onClose={() => setShowAddZone(false)} existingZones={zones} isCreating={createLocation.isPending} />
       )}
       {selectedSlot && (
         <AssignBottleDialog
           location={selectedSlot}
           onAssign={handleAssignBottle}
           onClear={handleClearSlot}
+          onDelete={handleDeleteLocation}
+          isAssigning={updateLocation.isPending}
+          isClearing={clearLocation.isPending}
+          isDeleting={deleteLocation.isPending}
           onClose={() => setSelectedSlot(null)}
         />
       )}

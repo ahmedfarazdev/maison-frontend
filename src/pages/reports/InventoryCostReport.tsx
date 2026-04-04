@@ -78,9 +78,9 @@ export default function InventoryCostReport() {
 
   const isLoading = loadingSealed || loadingDecant || loadingPerfumes || loadingPkgSkus;
 
-  const sealed: InventoryBottle[] = sealedRes?.data ?? [];
-  const decant: DecantBottle[] = decantRes?.data ?? [];
-  const perfumes: Perfume[] = perfumeRes?.data ?? [];
+  const sealed: InventoryBottle[] = sealedRes ?? [];
+  const decant: DecantBottle[] = decantRes ?? [];
+  const perfumes: Perfume[] = perfumeRes ?? [];
   const pkgSkus: PackagingSKU[] = Array.isArray(pkgSkuRes) ? pkgSkuRes : (pkgSkuRes as any)?.data ?? [];
 
   // Packaging inventory value

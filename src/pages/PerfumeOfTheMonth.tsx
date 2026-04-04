@@ -53,8 +53,8 @@ export default function PerfumeOfTheMonth() {
   const { data: potmRes, refetch: refetchPotm } = useApiQuery(() => api.potm.list(), []);
   const { data: perfumesRes } = useApiQuery(() => api.master.perfumes(), []);
 
-  const potmEntries = useMemo(() => (potmRes?.data || []) as any[], [potmRes]);
-  const perfumes = useMemo(() => (perfumesRes?.data || []) as Perfume[], [perfumesRes]);
+  const potmEntries = useMemo(() => (potmRes || []) as any[], [potmRes]);
+  const perfumes = useMemo(() => (perfumesRes || []) as Perfume[], [perfumesRes]);
 
   const months = useMemo(() => getNextMonths(6), []);
   const [selectedMonth, setSelectedMonth] = useState(months[0]);

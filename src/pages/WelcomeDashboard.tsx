@@ -382,7 +382,7 @@ export default function WelcomeDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const userRole = (user?.role || 'owner') as UserRole;
-  const userName = user?.name?.split(' ')[0] || 'there';
+  const userName = user?.fullName?.split(' ')[0] || 'there';
   const config = useMemo(() => getRoleConfig(userRole, userName), [userRole, userName]);
 
   // Fetch live KPIs for roles that see the dashboard
@@ -812,7 +812,7 @@ export default function WelcomeDashboard() {
                 <div className="flex items-center gap-1.5">
                   <Shield className="w-3 h-3 text-muted-foreground/50" />
                   <span className="text-xs text-muted-foreground">
-                    Logged in as <strong className="text-foreground">{user?.name || 'Owner'}</strong>
+                    Logged in as <strong className="text-foreground">{user?.fullName || 'Owner'}</strong>
                     <Badge variant="outline" className="ml-1.5 text-[8px]">{userRole.replace(/_/g, ' ')}</Badge>
                   </span>
                 </div>

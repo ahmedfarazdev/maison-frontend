@@ -305,7 +305,7 @@ export default function Ledger({ defaultTab }: { defaultTab?: LedgerTab } = {}) 
   const isStandalone = !!defaultTab;
   const [tab, setTab] = useState<LedgerTab>(defaultTab || 'timeline');
   const { data: decantRes } = useApiQuery(() => api.ledger.decant(), []);
-  const decantEvents = (decantRes?.data || []) as DecantLedgerEvent[];
+  const decantEvents = (decantRes || []) as DecantLedgerEvent[];
   const [search, setSearch] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [categoryFilter, setCategoryFilter] = useState<EventCategory>('all');

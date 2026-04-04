@@ -69,7 +69,7 @@ export default function Station1() {
   const { user, hasRole } = useAuth();
   const isManager = hasRole(...MANAGER_ROLES);
   const isOperator = hasRole(...OPERATOR_ROLES);
-  const userName = user?.name?.split(' ')[0] || 'Operator';
+  const userName = user?.fullName?.split(' ')[0] || 'Operator';
   const greeting = (() => {
     const h = new Date().getHours();
     if (h < 12) return 'Good morning';

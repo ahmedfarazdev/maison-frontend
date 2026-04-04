@@ -61,10 +61,10 @@ export default function ManualDecant() {
   const { data: syringesRes } = useApiQuery(() => api.master.syringes(), []);
   const { data: skusRes } = useApiQuery(() => api.master.packagingSKUs(), []);
 
-  const bottles = (bottlesRes?.data || []) as DecantBottle[];
-  const perfumes = (perfumesRes?.data || []) as Perfume[];
-  const syringes = ((syringesRes?.data || []) as Syringe[]).filter(s => s.active);
-  const skus = (skusRes?.data || []) as PackagingSKU[];
+  const bottles = (bottlesRes || []) as DecantBottle[];
+  const perfumes = (perfumesRes || []) as Perfume[];
+  const syringes = ((syringesRes || []) as Syringe[]).filter(s => s.active);
+  const skus = (skusRes || []) as PackagingSKU[];
 
   const [step, setStep] = useState(0);
   const [processId] = useState(() => `MD-${Date.now()}`);

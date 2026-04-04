@@ -145,6 +145,7 @@ const navItems: NavItem[] = [
   // Procurement
   {
     label: 'Procurement', icon: Truck,
+    permission: 'procurement.read',
     roles: ['owner', 'admin', 'inventory_admin', 'vault_guardian'],
     children: [
       { label: 'Quick PO', path: '/procurement/quick-po', icon: Zap },
@@ -187,6 +188,7 @@ const navItems: NavItem[] = [
   // Master Data
   {
     label: 'Master Data', icon: Database,
+    permission: 'master_data.read',
     roles: ['owner', 'admin', 'system_architect', 'inventory_admin', 'vault_guardian'],
     children: [
       { label: 'Perfume Master', path: '/master/perfumes', icon: BookOpen },
@@ -248,6 +250,7 @@ const navItems: NavItem[] = [
   // Reports
   {
     label: 'Reports', icon: BarChart3,
+    permission: 'reports.read',
     roles: ['owner', 'admin', 'system_architect', 'inventory_admin', 'qc', 'viewer', 'pod_leader'],
     children: [
       { label: 'Daily Ops Report', path: '/reports/daily-ops', icon: ClipboardList },

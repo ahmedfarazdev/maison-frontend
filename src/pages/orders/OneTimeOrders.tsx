@@ -215,8 +215,8 @@ function extractFullBottleBatches(
 // ---- Main Component ----
 export default function OneTimeOrders() {
   const { data: ordersRes } = useApiQuery(() => api.orders.list(), []);
-  const allOneTimeOrders = ((ordersRes?.data || []) as Order[]).filter(o => o.type === 'one_time');
-  const allSubOrders = ((ordersRes?.data || []) as Order[]).filter(o => o.type === 'subscription');
+  const allOneTimeOrders = ((ordersRes || []) as Order[]).filter(o => o.type === 'one_time');
+  const allSubOrders = ((ordersRes || []) as Order[]).filter(o => o.type === 'subscription');
   // First-time subscriber orders
   const firstTimeSubOrders = useMemo(() => {
     const ft = allSubOrders.filter((o: any) => o.isFirstSubscriber || o.is_first_subscriber);
@@ -843,7 +843,7 @@ function FullBottlesTab({ batches }: { batches: FullBottleBatch[] }) {
 // ---- Create Full Bottle PO Dialog ----
 function CreateFullBottlePODialog({ batch, onClose }: { batch: FullBottleBatch; onClose: () => void }) {
   const { data: suppliersRes } = useApiQuery(() => api.master.suppliers(), []);
-  const suppliers = (suppliersRes?.data || []) as Supplier[];
+  const suppliers = (suppliersRes || []) as Supplier[];
 
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [supplierSearch, setSupplierSearch] = useState('');

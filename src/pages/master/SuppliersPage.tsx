@@ -5,7 +5,7 @@
 // pending_delivery → qc → delivered → confirmed
 // ============================================================
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import { PageHeader, StatusBadge, SectionCard } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,10 +23,10 @@ import {
   PackageCheck, ChevronRight, Upload, Eye, Droplets, FlaskConical, Layers,
   MessageCircle, Send, Paperclip,
 } from 'lucide-react';
-import { PODocumentUpload } from '@/components/PODocumentUpload';
-import { PaymentDialog } from '@/components/PaymentDialog';
-import { POAttachments } from '@/components/POAttachments';
-import { InvoiceOCRPriceDialog } from '@/components/InvoiceOCRPriceDialog';
+const PODocumentUpload = lazy(() => import('@/components/PODocumentUpload').then(m => ({ default: m.PODocumentUpload })));
+const PaymentDialog = lazy(() => import('@/components/PaymentDialog').then(m => ({ default: m.PaymentDialog })));
+const POAttachments = lazy(() => import('@/components/POAttachments').then(m => ({ default: m.POAttachments })));
+const InvoiceOCRPriceDialog = lazy(() => import('@/components/InvoiceOCRPriceDialog').then(m => ({ default: m.InvoiceOCRPriceDialog })));
 
 // ---- Types ----
 type POStatus = 'draft' | 'pending_quote' | 'quote_approved' | 'pending_delivery' | 'qc' | 'delivered' | 'confirmed' | 'cancelled';
@@ -1004,70 +1004,78 @@ function SupplierDetail({ supplier, brands, onBack, onEdit, onCreatePO, onRefres
 
       {/* Document Upload Dialog */}
       {uploadingPO && (
-        <PODocumentUpload
-          poId={uploadingPO.po.po_serial}
-          poNumber={uploadingPO.po.po_serial}
-          type={uploadingPO.type}
-          existingUrl={uploadingPO.type === 'quote' ? uploadingPO.po.quote_url : uploadingPO.po.invoice_url}
-          onClose={() => setUploadingPO(null)}
-          onUploaded={() => {
-            setUploadingPO(null);
-            loadData();
-            onRefresh();
-          }}
-        />
+        <Suspense fallback={null}>
+          <PODocumentUpload
+            poId={uploadingPO.po.po_serial}
+            poNumber={uploadingPO.po.po_serial}
+            type={uploadingPO.type}
+            existingUrl={uploadingPO.type === 'quote' ? uploadingPO.po.quote_url : uploadingPO.po.invoice_url}
+            onClose={() => setUploadingPO(null)}
+            onUploaded={() => {
+              setUploadingPO(null);
+              loadData();
+              onRefresh();
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Payment Dialog */}
       {paymentPO && (
-        <PaymentDialog
-          poId={paymentPO.po_serial}
-          poNumber={paymentPO.po_serial}
-          totalAmount={paymentPO.total_amount || 0}
-          currency={paymentPO.currency || 'AED'}
-          currentPaymentStatus={paymentPO.payment_status}
-          currentPaymentMethod={paymentPO.payment_method ?? undefined}
-          currentPaymentDate={paymentPO.payment_date ?? undefined}
-          currentAmountPaid={paymentPO.amount_paid}
-          currentPaymentRef={paymentPO.payment_ref ?? undefined}
-          currentPaymentNotes={paymentPO.payment_notes ?? undefined}
-          onClose={() => setPaymentPO(null)}
-          onSaved={() => { loadData(); onRefresh(); }}
-        />
+        <Suspense fallback={null}>
+          <PaymentDialog
+            poId={paymentPO.po_serial}
+            poNumber={paymentPO.po_serial}
+            totalAmount={paymentPO.total_amount || 0}
+            currency={paymentPO.currency || 'AED'}
+            currentPaymentStatus={paymentPO.payment_status}
+            currentPaymentMethod={paymentPO.payment_method ?? undefined}
+            currentPaymentDate={paymentPO.payment_date ?? undefined}
+            currentAmountPaid={paymentPO.amount_paid}
+            currentPaymentRef={paymentPO.payment_ref ?? undefined}
+            currentPaymentNotes={paymentPO.payment_notes ?? undefined}
+            onClose={() => setPaymentPO(null)}
+            onSaved={() => { loadData(); onRefresh(); }}
+          />
+        </Suspense>
       )}
 
       {/* Unit Price Dialog with Invoice OCR */}
       {pricePO && (
-        <InvoiceOCRPriceDialog
-          items={pricePO.items.map(i => ({
-            id: String(i.id),
-            perfume_name: i.perfume_name,
-            size_ml: i.size_ml,
-            qty: i.qty,
-            bottle_type: i.bottle_type,
-            master_id: i.master_id || i.perfume_id,
-            unit_price: i.unit_price,
-            received_qty: i.received_qty,
-          }))}
-          poSerial={pricePO.po_serial}
-          supplierId={supplier.supplier_id}
-          onClose={() => setPricePO(null)}
-          onConfirmed={() => {
-            setPricePO(null);
-            loadData();
-            onRefresh();
-          }}
-        />
+        <Suspense fallback={null}>
+          <InvoiceOCRPriceDialog
+            items={pricePO.items.map(i => ({
+              id: String(i.id),
+              perfume_name: i.perfume_name,
+              size_ml: i.size_ml,
+              qty: i.qty,
+              bottle_type: i.bottle_type,
+              master_id: i.master_id || i.perfume_id,
+              unit_price: i.unit_price,
+              received_qty: i.received_qty,
+            }))}
+            poSerial={pricePO.po_serial}
+            supplierId={supplier.supplier_id}
+            onClose={() => setPricePO(null)}
+            onConfirmed={() => {
+              setPricePO(null);
+              loadData();
+              onRefresh();
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Attachments Dialog */}
       {attachmentsPO && (
-        <POAttachments
-          poId={attachmentsPO.po_serial}
-          poNumber={attachmentsPO.po_serial}
-          onClose={() => setAttachmentsPO(null)}
-          onChanged={() => { loadData(); onRefresh(); }}
-        />
+        <Suspense fallback={null}>
+          <POAttachments
+            poId={attachmentsPO.po_serial}
+            poNumber={attachmentsPO.po_serial}
+            onClose={() => setAttachmentsPO(null)}
+            onChanged={() => { loadData(); onRefresh(); }}
+          />
+        </Suspense>
       )}
     </div>
   );

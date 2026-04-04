@@ -26,7 +26,7 @@ import type { AuraColor, Concentration, HypeLevel, ScentType, DecantPricing, Per
 import {
   X, ChevronRight, ChevronLeft, Check, Copy, Sparkles,
   Droplets, Tag, BookOpen, DollarSign, FileText, Search, MapPin,
-  Upload, Image as ImageIcon, Trash2, GripVertical, Calculator,
+  Upload, Image as ImageIcon, Trash2, GripVertical, Calculator, Loader2
 } from 'lucide-react';
 import { MultiImageUpload } from '@/components/shared/MultiImageUpload';
 import NoteMultiSelect from '@/components/master/NoteMultiSelect';
@@ -130,6 +130,7 @@ const INITIAL_STATE: FormState = {
 interface AddPerfumeFormProps {
   onClose: () => void;
   onSubmit: (perfume: Perfume) => void;
+  isPending?: boolean;
   families: { main_family_id: string; name: string }[];
   subFamilies: { sub_family_id: string; main_family_id: string; name: string }[];
   auras: { aura_id: string; name: string; color_hex: string }[];
@@ -137,7 +138,7 @@ interface AddPerfumeFormProps {
   editPerfume?: Perfume;
 }
 
-export default function AddPerfumeForm({ onClose, onSubmit, families, subFamilies, auras, brands, editPerfume }: AddPerfumeFormProps) {
+export default function AddPerfumeForm({ onClose, onSubmit, isPending, families, subFamilies, auras, brands, editPerfume }: AddPerfumeFormProps) {
   const isEditMode = !!editPerfume;
 
   // Fetch notes library for linked dropdowns
@@ -389,7 +390,6 @@ export default function AddPerfumeForm({ onClose, onSubmit, families, subFamilie
     };
 
     onSubmit(perfume);
-    toast.success(isEditMode ? 'Perfume updated' : 'Perfume created', { description: masterId });
   }, [form, masterId, isEditMode, autoCalcPricePerMl, autoDecantPrices, autoMultiplier, autoSurchargeTier, onSubmit]);
 
   // ---- Shared styles ----
@@ -1173,14 +1173,23 @@ export default function AddPerfumeForm({ onClose, onSubmit, families, subFamilie
             <span className="text-xs text-muted-foreground">Step {step + 1} of {STEPS.length}</span>
             {step < STEPS.length - 1 ? (
               <Button size="sm" onClick={() => setStep(step + 1)}
-                disabled={!stepValid}
+                disabled={!stepValid || isPending}
                 className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5">
                 Next <ChevronRight className="w-3.5 h-3.5" />
               </Button>
             ) : (
               <Button size="sm" onClick={handleSubmit}
+                disabled={isPending}
                 className="bg-success hover:bg-success/90 text-success-foreground gap-1.5">
-                <Check className="w-3.5 h-3.5" /> {isEditMode ? 'Save Changes' : 'Create Perfume'}
+                {isPending ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> {isEditMode ? 'Saving...' : 'Creating...'}
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" /> {isEditMode ? 'Save Changes' : 'Create Perfume'}
+                  </>
+                )}
               </Button>
             )}
           </div>

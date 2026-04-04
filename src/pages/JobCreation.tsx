@@ -118,10 +118,10 @@ export default function JobCreation() {
   const { data: cyclesRes } = useApiQuery(() => api.subscriptions.cycles(), []);
   const { data: pipelineRes } = useApiQuery(() => api.dashboard.pipeline(), []);
 
-  const orders = (ordersRes?.data || []) as Order[];
-  const jobs = (jobsRes?.data || []) as Job[];
-  const cycles = (cyclesRes?.data || []) as SubscriptionCycle[];
-  const pipeline = pipelineRes?.data as PipelineStage[] | undefined;
+  const orders = (ordersRes || []) as Order[];
+  const jobs = (jobsRes || []) as Job[];
+  const cycles = (cyclesRes || []) as SubscriptionCycle[];
+  const pipeline = pipelineRes as PipelineStage[] | undefined;
 
   // One-Time state
   const [selectedCutoff, setSelectedCutoff] = useState(MOCK_CUTOFFS[0].id);

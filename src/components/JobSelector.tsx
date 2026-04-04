@@ -27,7 +27,7 @@ export function JobSelector({ mode, stationNumber, selectedJobIds, onSelectionCh
   // If no mode specified, show all jobs (unified station mode)
   const [expanded, setExpanded] = useState(true);
   const { data: jobsRes } = useApiQuery(() => api.jobs.list(), []);
-  const allJobs = (jobsRes?.data || []) as Job[];
+  const allJobs = (jobsRes || []) as Job[];
 
   // Filter to jobs of the current mode that are at or before this station
   const relevantJobs = allJobs.filter(j => {

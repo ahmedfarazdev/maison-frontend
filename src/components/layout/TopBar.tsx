@@ -3,18 +3,19 @@
 // Design: "Maison Ops" — clean, warm white, gold scan focus
 // ============================================================
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { ScanBarcode, Search, User, ChevronDown, Moon, Sun, Camera, Activity } from 'lucide-react';
+import { ScanBarcode, Search, User, ChevronDown, Moon, Sun, Camera, Activity, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { UserRole } from '@/types';
-import BarcodeScannerDialog from '@/components/scanner/BarcodeScannerDialog';
-import BottleDetailDrawer from '@/components/scanner/BottleDetailDrawer';
 import GlobalSearch from '@/components/global/GlobalSearch';
 import NotificationBell from '@/components/global/NotificationBell';
-import ActivityFeed from '@/components/global/ActivityFeed';
+
+const BarcodeScannerDialog = lazy(() => import('@/components/scanner/BarcodeScannerDialog'));
+const BottleDetailDrawer = lazy(() => import('@/components/scanner/BottleDetailDrawer'));
+const ActivityFeed = lazy(() => import('@/components/global/ActivityFeed'));
 
 const ROLE_LABELS: Record<UserRole, string> = {
   owner: 'Owner',
@@ -27,10 +28,13 @@ const ROLE_LABELS: Record<UserRole, string> = {
   pod_junior: 'Pod Junior Member',
   pod_leader: 'Pod Leader',
   pod_senior: 'Pod Senior Member',
+  user: 'Standard User',
+  vault_ops: 'Vault Operations',
+  fulfillment_ops: 'Fulfillment Operations',
 };
 
 export default function TopBar() {
-  const { user, switchRole } = useAuth();
+  const { user, switchRole, logout } = useAuth();
   const { theme, toggleTheme, switchable } = useTheme();
   const [scanValue, setScanValue] = useState('');
   const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
@@ -178,7 +182,7 @@ export default function TopBar() {
               <User className="w-3.5 h-3.5 text-primary-foreground" />
             </div>
             <div className="hidden sm:block text-left">
-              <p className="text-xs font-medium leading-none">{user?.name || 'User'}</p>
+              <p className="text-xs font-medium leading-none">{user?.fullName || 'User'}</p>
               <p className="text-[10px] text-muted-foreground mt-0.5">{user ? ROLE_LABELS[user.role] : ''}</p>
             </div>
             <ChevronDown className="w-3 h-3 text-muted-foreground" />
@@ -207,28 +211,53 @@ export default function TopBar() {
             </>
           )}
         </div>
+
+        {/* Sign Out Button */}
+        <button
+          onClick={logout}
+          className={cn(
+            'h-9 px-3 flex items-center gap-2 text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors',
+            'border border-transparent hover:border-destructive/20'
+          )}
+          title="Sign Out"
+        >
+          <LogOut className="w-4 h-4" />
+          <span className="hidden lg:inline font-medium">Sign Out</span>
+        </button>
       </header>
 
       {/* Global Search Dialog (⌘K) */}
       <GlobalSearch />
 
       {/* Activity Feed Sheet */}
-      <ActivityFeed open={showActivityFeed} onClose={() => setShowActivityFeed(false)} />
+      {showActivityFeed && (
+        <Suspense fallback={null}>
+          <ActivityFeed open={showActivityFeed} onClose={() => setShowActivityFeed(false)} />
+        </Suspense>
+      )}
 
       {/* Camera Scanner Dialog */}
-      <BarcodeScannerDialog
-        open={showScanner}
-        onClose={() => setShowScanner(false)}
-        onScan={handleScanResult}
-      />
+      {showScanner && (
+        <Suspense fallback={null}>
+          <BarcodeScannerDialog
+            open={showScanner}
+            onClose={() => setShowScanner(false)}
+            onScan={handleScanResult}
+          />
+        </Suspense>
+      )}
 
       {/* Bottle Detail Drawer */}
-      <BottleDetailDrawer
-        open={showBottleDetail}
-        onClose={() => { setShowBottleDetail(false); setScannedCode(null); setResolvedBottleId(null); }}
-        bottleId={resolvedBottleId}
-        scannedCode={scannedCode}
-      />
+      {showBottleDetail && (
+        <Suspense fallback={null}>
+          <BottleDetailDrawer
+            open={showBottleDetail}
+            onClose={() => { setShowBottleDetail(false); setScannedCode(null); setResolvedBottleId(null); }}
+            bottleId={resolvedBottleId}
+            scannedCode={scannedCode}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

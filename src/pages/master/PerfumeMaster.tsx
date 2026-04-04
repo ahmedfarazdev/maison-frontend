@@ -6,6 +6,7 @@
 // ============================================================
 
 import { useState, useMemo } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader, StatusBadge } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { useApiQuery } from '@/hooks/useApiQuery';
@@ -21,8 +22,9 @@ import type { Perfume, AuraColor, Syringe, InventoryBottle, DecantBottle } from 
 import AddPerfumeForm from '@/components/master/AddPerfumeForm';
 import BulkCsvUpload from '@/components/master/BulkCsvUpload';
 import PricingCalculator from '@/components/master/PricingCalculator';
-import { mockFamilies, mockSubFamilies, mockAuras, mockSyringes } from '@/lib/mock-data';
 import { mockBrands } from '@/lib/mock-brands';
+import { useTaxonomies } from '@/hooks/useTaxonomies';
+import { useSyringes } from '@/hooks/useSyringes';
 
 const AURA_HEX: Record<AuraColor, string> = {
   Red: '#C41E3A', Blue: '#1B6B93', Violet: '#4A0E4E',
@@ -96,8 +98,14 @@ export default function PerfumeMaster() {
   const { data: perfumesRes } = useApiQuery(() => api.master.perfumes(), []);
   const { data: bottlesRes } = useApiQuery(() => api.inventory.sealedBottles(), []);
   const { data: decantRes } = useApiQuery(() => api.inventory.decantBottles(), []);
+
+  const { familiesQuery, subFamiliesQuery, aurasQuery } = useTaxonomies();
+  const { syringesQuery } = useSyringes();
+
+  const isDataLoading = familiesQuery.isLoading || subFamiliesQuery.isLoading || aurasQuery.isLoading || syringesQuery.isLoading;
+
   const [perfumes, setPerfumes] = useState<Perfume[]>([]);
-  const [syringes, setSyringes] = useState<Syringe[]>([...mockSyringes]);
+  // We can keep search and local state here
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Perfume | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -119,11 +127,11 @@ export default function PerfumeMaster() {
   const [deleteTarget, setDeleteTarget] = useState<Perfume | null>(null);
   const [editTarget, setEditTarget] = useState<Perfume | null>(null);
 
-  const bottles = (bottlesRes?.data || []) as InventoryBottle[];
-  const decantBottles = (decantRes?.data || []) as DecantBottle[];
+  const bottles = (bottlesRes || []) as InventoryBottle[];
+  const decantBottles = (decantRes || []) as DecantBottle[];
 
   // Merge API data with locally added perfumes
-  const allPerfumes = [...((perfumesRes?.data || []) as Perfume[]), ...perfumes];
+  const allPerfumes = [...((perfumesRes || []) as Perfume[]), ...perfumes];
 
   // Pre-compute inventory stats for all perfumes
   const inventoryMap = useMemo(() => {
@@ -176,10 +184,11 @@ export default function PerfumeMaster() {
     return b.retail_price - a.retail_price;
   });
 
-  const handleAddPerfume = async (perfume: Perfume) => {
-    try {
+  const queryClient = useQueryClient();
+
+  const addPerfumeMutation = useMutation({
+    mutationFn: async (perfume: Perfume) => {
       // Persist perfume to database — master data only, no stock creation.
-      // To add stock, use Station 0 → Stock Register.
       await api.mutations.perfumes.create({
         masterId: perfume.master_id,
         brand: perfume.brand,
@@ -220,7 +229,8 @@ export default function PerfumeMaster() {
       });
 
       // Also create a syringe for this perfume
-      const nextSeq = syringes.length + 1;
+      const currentSyringes = syringesQuery.data || [];
+      const nextSeq = currentSyringes.length + 1;
       const syringeId = `S/${nextSeq}`;
       await api.mutations.syringes.create({
         syringeId,
@@ -234,23 +244,20 @@ export default function PerfumeMaster() {
         active: true,
         notes: 'Auto-created with perfume',
       });
-
-      toast.success(`Perfume "${perfume.brand} — ${perfume.name}" added to Master Data`);
+      return { perfume, syringeId };
+    },
+    onSuccess: ({ perfume, syringeId }) => {
+      queryClient.invalidateQueries({ queryKey: [api.master.perfumes.name] });
+      queryClient.invalidateQueries({ queryKey: [api.syringes.list.name] });
+      setShowAddForm(false);
       toast.success(`Syringe ${syringeId} auto-created`);
       toast.info('To add stock, go to Station 0 → Stock Register', { duration: 5000 });
+    },
+    meta: { successMessage: 'Perfume added to Master Data' }
+  });
 
-      // Force re-fetch by reloading the page data
-      window.location.reload();
-    } catch (err: any) {
-      console.error('Failed to save perfume:', err);
-      toast.error(`Failed to save: ${err.message}`);
-      // Still add locally as fallback
-      setPerfumes(prev => [...prev, perfume]);
-    }
-  };
-
-  const handleEditPerfume = async (perfume: Perfume) => {
-    try {
+  const editPerfumeMutation = useMutation({
+    mutationFn: async (perfume: Perfume) => {
       await api.mutations.perfumes.update(perfume.master_id, {
         brand: perfume.brand,
         name: perfume.name,
@@ -288,24 +295,36 @@ export default function PerfumeMaster() {
         bottleImages: perfume.bottle_images || [],
         brandImageUrl: perfume.brand_image_url || null,
       });
-
-      toast.success(`Perfume "${perfume.brand} — ${perfume.name}" updated`);
+      return perfume;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.master.perfumes.name] });
       setEditTarget(null);
-      window.location.reload();
-    } catch (err: any) {
-      console.error('Failed to update perfume:', err);
-      toast.error(`Failed to update: ${err.message}`);
-    }
-  };
+    },
+    meta: { successMessage: 'Perfume updated successfully' }
+  });
 
-  const handleBulkImport = (importedPerfumes: Perfume[], importedSyringes: Syringe[]) => {
+  const deletePerfumeMutation = useMutation({
+    mutationFn: async (masterId: string) => {
+      await api.mutations.perfumes.delete(masterId);
+      return masterId;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.master.perfumes.name] });
+      setDeleteTarget(null);
+      setSelected(null);
+    },
+    meta: { successMessage: 'Perfume deleted successfully' }
+  });
+
+  const handleBulkImport = (importedPerfumes: Perfume[]) => {
     setPerfumes(prev => [...prev, ...importedPerfumes]);
-    setSyringes(prev => [...prev, ...importedSyringes]);
+    // The syringes will get refetched from server if bulk upload logic adds them. Or just page reload.
     setShowBulkUpload(false);
   };
 
   const getSyringeForPerfume = (masterId: string) => {
-    return syringes.find(s => s.assigned_master_id === masterId);
+    return (syringesQuery.data || []).find(s => s.assigned_master_id === masterId);
   };
 
   // CSV Export
@@ -346,7 +365,7 @@ export default function PerfumeMaster() {
     <div>
       <PageHeader
         title="Perfume Master"
-        subtitle={`${allPerfumes.length} perfumes · ${syringes.length} syringes`}
+        subtitle={`${allPerfumes.length} perfumes · ${(syringesQuery.data || []).length} syringes`}
         breadcrumbs={[{ label: 'Master Data' }, { label: 'Perfume Master' }]}
         actions={
           <div className="flex items-center gap-2">
@@ -359,7 +378,7 @@ export default function PerfumeMaster() {
               <Upload className="w-3.5 h-3.5" /> Bulk CSV Import
             </Button>
             <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5"
-              onClick={() => setShowAddForm(true)}>
+              onClick={() => setShowAddForm(true)} disabled={isDataLoading}>
               <Plus className="w-3.5 h-3.5" /> Add Perfume
             </Button>
           </div>
@@ -850,7 +869,7 @@ export default function PerfumeMaster() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  <Button size="sm" variant="ghost" className="text-gold hover:bg-gold/10" onClick={() => { setEditTarget(selected); setSelected(null); }} title="Edit perfume">
+                  <Button size="sm" variant="ghost" className="text-gold hover:bg-gold/10" onClick={() => { setEditTarget(selected); setSelected(null); }} disabled={isDataLoading} title="Edit perfume">
                     <Pencil className="w-4 h-4" />
                   </Button>
                   <Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10" onClick={() => { setSelected(null); setDeleteTarget(selected); }}>
@@ -1081,10 +1100,11 @@ export default function PerfumeMaster() {
       {showAddForm && (
         <AddPerfumeForm
           onClose={() => setShowAddForm(false)}
-          onSubmit={handleAddPerfume}
-          families={mockFamilies}
-          subFamilies={mockSubFamilies}
-          auras={mockAuras}
+          onSubmit={(p) => addPerfumeMutation.mutate(p)}
+          isPending={addPerfumeMutation.isPending}
+          families={familiesQuery.data || []}
+          subFamilies={subFamiliesQuery.data || []}
+          auras={aurasQuery.data || []}
           brands={mockBrands}
         />
       )}
@@ -1093,10 +1113,11 @@ export default function PerfumeMaster() {
       {editTarget && (
         <AddPerfumeForm
           onClose={() => setEditTarget(null)}
-          onSubmit={handleEditPerfume}
-          families={mockFamilies}
-          subFamilies={mockSubFamilies}
-          auras={mockAuras}
+          onSubmit={(p) => editPerfumeMutation.mutate(p)}
+          isPending={editPerfumeMutation.isPending}
+          families={familiesQuery.data || []}
+          subFamilies={subFamiliesQuery.data || []}
+          auras={aurasQuery.data || []}
           brands={mockBrands}
           editPerfume={editTarget}
         />
@@ -1110,14 +1131,7 @@ export default function PerfumeMaster() {
         description={deleteTarget ? `Are you sure you want to delete "${deleteTarget.brand} — ${deleteTarget.name}" (${deleteTarget.master_id})? This action cannot be undone.` : ''}
         onConfirm={async () => {
           if (!deleteTarget) return;
-          try {
-            await api.mutations.perfumes.delete(deleteTarget.master_id);
-            toast.success(`Deleted ${deleteTarget.name}`);
-            window.location.reload();
-          } catch (err: any) {
-            toast.error(`Failed to delete: ${err.message}`);
-            throw err;
-          }
+          await deletePerfumeMutation.mutateAsync(deleteTarget.master_id);
         }}
       />
 

@@ -72,7 +72,7 @@ export default function NotesLibrary() {
     [selectedNote?.name ?? ''],
   );
 
-  const notes: Note[] = notesRes?.data ?? [];
+  const notes: Note[] = notesRes ?? [];
   const counts: Record<string, number> = (countsData as any) ?? {};
   const perfumes: PerfumeRef[] = (perfumesForNote as any)?.data ?? [];
 

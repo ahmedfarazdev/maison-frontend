@@ -14,52 +14,6 @@ interface AuthContextType extends AuthState {
   switchRole: (role: UserRole) => void; // Dev mode only
 }
 
-// Permission matrix — Round 23: Full access audit
-const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
-  owner: ['*'],
-  admin: ['*'],
-  system_architect: [
-    'bom.read', 'bom.write', 'master_data.read', 'master_data.write',
-    'inventory.read', 'settings.read', 'settings.write',
-    'ledger.read', 'dashboard.read', 'reports.read',
-  ],
-  inventory_admin: [
-    'station_0', 'inventory.read', 'inventory.write',
-    'master_data.read', 'master_data.write',
-    'procurement.read', 'procurement.write',
-    'ledger.read', 'dashboard.read', 'reports.read',
-  ],
-  qc: [
-    'station_4', 'station_5',
-    'orders.read', 'inventory.read',
-    'dashboard.read', 'reports.read',
-  ],
-  viewer: [
-    'dashboard.read', 'orders.read', 'inventory.read',
-    'master_data.read', 'ledger.read', 'reports.read',
-  ],
-  vault_guardian: [
-    'station_0', 'vault_guardian', 'vault_ledger',
-    'procurement.read', 'procurement.write',
-    'master_data.read', 'master_data.write',
-    'inventory.read', 'inventory.write', 'ledger.read',
-  ],
-  pod_junior: [
-    'station_1', 'station_2', 'station_3', 'station_4', 'station_5', 'station_6',
-    'orders.read', 'inventory.read', 'print_jobs',
-  ],
-  pod_leader: [
-    'station_1', 'station_2', 'station_3', 'station_4', 'station_5', 'station_6',
-    'manual_decant', 'orders.read', 'orders.write', 'inventory.read',
-    'ledger.read', 'work_allocation', 'operator_management',
-    'dashboard.read', 'reports.read', 'print_jobs',
-  ],
-  pod_senior: [
-    'station_1', 'station_2', 'station_3', 'station_4', 'station_5', 'station_6',
-    'manual_decant', 'orders.read', 'inventory.read', 'print_jobs',
-  ],
-};
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -82,27 +36,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const login = useCallback(async (_email: string, _password: string) => {
-    // Mock login for now — triggers a fresh user fetch
-    const res = await api.auth.me();
-    setState({ user: res.data, isAuthenticated: !!res.data, isLoading: false });
+  const login = useCallback(async (email: string, password: string) => {
+    setState(prev => ({ ...prev, isLoading: true }));
+    try {
+      await api.auth.signIn(email, password);
+      const res = await api.auth.me();
+      setState({
+        user: res.data,
+        isAuthenticated: !!res.data,
+        isLoading: false,
+      });
+    } catch (error: any) {
+      setState(prev => ({ ...prev, isLoading: false }));
+      throw error;
+    }
   }, []);
 
-  const logout = useCallback(() => {
-    // Clear local token (dummy implementation for now)
-    localStorage.removeItem('sb-access-token');
+  const logout = useCallback(async () => {
+    await api.auth.signOut();
     setState({ user: null, isAuthenticated: false, isLoading: false });
   }, []);
 
   const hasRole = useCallback((...roles: UserRole[]) => {
     if (!state.user) return false;
-    if (state.user.role === 'owner' || state.user.role === 'admin') return true;
-    return roles.includes(state.user.role);
+    const userRoles = state.user.roles || [state.user.role];
+    if (userRoles.includes('owner') || userRoles.includes('admin')) return true;
+    return roles.some(role => userRoles.includes(role));
   }, [state.user]);
 
   const hasPermission = useCallback((permission: string) => {
     if (!state.user) return false;
-    const perms = ROLE_PERMISSIONS[state.user.role];
+    const userRoles = state.user.roles || [state.user.role];
+    if (userRoles.includes('owner') || userRoles.includes('admin')) return true;
+    const perms = state.user.permissions || [];
     return perms.includes('*') || perms.includes(permission);
   }, [state.user]);
 

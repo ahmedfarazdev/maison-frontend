@@ -56,10 +56,10 @@ export default function Subscriptions() {
   const { data: ordersRes } = useApiQuery(() => api.orders.list(), []);
   const { data: potmRes } = useApiQuery(() => api.potm.list(), []);
 
-  const potmData = (potmRes?.data || []) as { id: number; month: string; slot: number; perfume_master_id: string; perfume_name: string }[];
+  const potmData = (potmRes || []) as { id: number; month: string; slot: number; perfume_master_id: string; perfume_name: string }[];
 
-  const cycles = (cyclesRes?.data || []) as SubscriptionCycle[];
-  const allSubOrders = ((ordersRes?.data || []) as Order[]).filter(o => o.type === 'subscription');
+  const cycles = (cyclesRes || []) as SubscriptionCycle[];
+  const allSubOrders = ((ordersRes || []) as Order[]).filter(o => o.type === 'subscription');
 
   // First-time subscriber orders
   const firstTimeOrders = useMemo(() => {

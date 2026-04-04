@@ -6,10 +6,26 @@ import path from 'path'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'wouter'],
+          query: ['@tanstack/react-query'],
+          ui: ['lucide-react', 'sonner'],
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
       "@shared": path.resolve(import.meta.dirname, "./src/shared"),
+    },
+  },
+  server: {
+    hmr: {
+      overlay: false,
     },
   },
 })

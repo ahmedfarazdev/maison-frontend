@@ -6,10 +6,20 @@
 // full CRUD, supplier linking, zone tracking
 // ============================================================
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader, StatusBadge, SectionCard } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { api } from '@/lib/api-client';
 import type { PackagingSKU, PackagingCategory, Supplier } from '@/types';
 import { PACKAGING_CATEGORY_CODES } from '@/types';
@@ -21,6 +31,7 @@ import {
   Box, Ruler, Hash, Archive, Trash2, Link2, Unlink,
   Loader2, RefreshCw, FileSpreadsheet, ChevronDown, ChevronRight,
 } from 'lucide-react';
+
 
 // ---- Constants ----
 const CATEGORIES: PackagingCategory[] = [
@@ -732,9 +743,22 @@ function BulkPackagingCsvUpload({ onImport, onClose }: {
 
 // ---- Main Page ----
 export default function PackagingSKUsPage() {
-  const [skus, setSkus] = useState<PackagingSKU[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+
+  const { data: skusData, isLoading: skusLoading } = useQuery({
+    queryKey: ['packagingSKUs'],
+    queryFn: () => api.master.packagingSKUs().then(res => res.data),
+  });
+
+  const { data: suppliersData, isLoading: suppliersLoading } = useQuery({
+    queryKey: ['suppliers'],
+    queryFn: () => api.master.suppliers().then(res => res.data),
+  });
+
+  const skus: PackagingSKU[] = skusData || [];
+  const suppliers: Supplier[] = suppliersData || [];
+  const loading = skusLoading || suppliersLoading;
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [showForm, setShowForm] = useState(false);
@@ -742,25 +766,7 @@ export default function PackagingSKUsPage() {
   const [linkingSku, setLinkingSku] = useState<PackagingSKU | null>(null);
   const [linkedSupplierIds, setLinkedSupplierIds] = useState<string[]>([]);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [skuRes, supRes] = await Promise.all([
-        api.master.packagingSKUs(),
-        api.master.suppliers(),
-      ]);
-      setSkus(skuRes.data);
-      setSuppliers(supRes.data);
-    } catch (e) {
-      console.error('Failed to load packaging data', e);
-      toast.error('Failed to load packaging data');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { loadData(); }, [loadData]);
+  const [deleteConfirmSku, setDeleteConfirmSku] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     return skus.filter(s => {
@@ -808,24 +814,19 @@ export default function PackagingSKUsPage() {
       active: formData.active !== false,
     };
 
-    if (isEdit) {
-      await api.mutations.packagingSkus.update(formData.sku_id!, payload);
-    } else {
-      await api.mutations.packagingSkus.create(payload);
-    }
-    await loadData();
-  }, [loadData]);
-
-  const handleDelete = useCallback(async (skuId: string) => {
-    if (!confirm(`Delete SKU ${skuId}? This cannot be undone.`)) return;
     try {
-      await api.mutations.packagingSkus.delete(skuId);
-      toast.success(`SKU ${skuId} deleted`);
-      await loadData();
+      if (isEdit) {
+        await api.mutations.packagingSkus.update(formData.sku_id!, payload);
+      } else {
+        await api.mutations.packagingSkus.create(payload);
+      }
+      queryClient.invalidateQueries({ queryKey: ['packagingSKUs'] });
+      toast.success(isEdit ? 'SKU updated' : 'SKU created');
+      setShowForm(false);
     } catch (e: any) {
-      toast.error(e.message || 'Failed to delete SKU');
+      toast.error(e.message || 'Failed to save SKU');
     }
-  }, [loadData]);
+  }, [queryClient]);
 
   const handleOpenLinkDialog = useCallback(async (sku: PackagingSKU) => {
     setLinkingSku(sku);
@@ -839,20 +840,18 @@ export default function PackagingSKUsPage() {
 
   const handleLinkSupplier = useCallback(async (supplierId: string) => {
     if (!linkingSku) return;
-    await api.mutations.packagingSkus.linkSupplier(linkingSku.sku_id, supplierId);
+    await api.mutations.packagingSkus.linkSupplier({
+      skuId: linkingSku.sku_id,
+      supplierId,
+      isPreferred: false
+    });
     setLinkedSupplierIds(prev => [...prev, supplierId]);
     toast.success('Supplier linked');
   }, [linkingSku]);
 
   const handleUnlinkSupplier = useCallback(async (supplierId: string) => {
     if (!linkingSku) return;
-    // For unlinking, we need the link record ID. For now, use a workaround:
-    // Re-fetch suppliers to find the link ID, then remove
-    const allLinks = await api.mutations.packagingSkus.getSuppliers(linkingSku.sku_id);
-    const link = (allLinks || []).find((l: any) => String(l.supplierId) === supplierId);
-    if (link) {
-      await api.mutations.packagingSkus.unlinkSupplier(linkingSku.sku_id, link.id);
-    }
+    await api.mutations.packagingSkus.unlinkSupplier(linkingSku.sku_id, supplierId);
     setLinkedSupplierIds(prev => prev.filter(id => id !== supplierId));
     toast.success('Supplier unlinked');
   }, [linkingSku]);
@@ -865,15 +864,43 @@ export default function PackagingSKUsPage() {
     );
   }
 
+  const confirmDelete = async () => {
+    if (!deleteConfirmSku) return;
+    try {
+      await api.mutations.packagingSkus.delete(deleteConfirmSku);
+      queryClient.invalidateQueries({ queryKey: ['packagingSKUs'] });
+      toast.success(`SKU ${deleteConfirmSku} deleted`);
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to delete SKU');
+    } finally {
+      setDeleteConfirmSku(null);
+    }
+  };
+
   return (
     <div>
+      <AlertDialog open={!!deleteConfirmSku} onOpenChange={(open) => !open && setDeleteConfirmSku(null)}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Delete SKU</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete SKU {deleteConfirmSku}? This action cannot be undone.
+          </AlertDialogDescription>
+          <div className="flex justify-end gap-3 mt-4">
+            <AlertDialogCancel onClick={() => setDeleteConfirmSku(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <PageHeader
         title="Packaging & Materials"
         subtitle={`${skus.length} SKUs across ${categoryCount} categories — Non-liquid inventory master`}
         breadcrumbs={[{ label: 'Master Data' }, { label: 'Packaging & Materials' }]}
         actions={
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => loadData()}>
+            <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => queryClient.invalidateQueries({ queryKey: ['packagingSKUs'] })}>
               <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </Button>
             <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => exportPackagingCsv(skus)}>
@@ -1002,7 +1029,7 @@ export default function PackagingSKUsPage() {
                                 className="text-muted-foreground hover:text-gold transition-colors p-1" title="Edit">
                                 <Edit2 className="w-3.5 h-3.5" />
                               </button>
-                              <button onClick={() => handleDelete(s.sku_id)}
+                              <button onClick={() => setDeleteConfirmSku(s.sku_id)}
                                 className="text-muted-foreground hover:text-destructive transition-colors p-1" title="Delete">
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -1040,29 +1067,28 @@ export default function PackagingSKUsPage() {
       {showBulkUpload && (
         <BulkPackagingCsvUpload
           onImport={async (items) => {
-            let created = 0, failed = 0;
-            for (const row of items) {
-              try {
-                await api.mutations.packagingSkus.create({
-                  skuId: row.sku_id,
-                  name: row.name,
-                  category: row.category,
-                  sizeSpec: row.size_spec,
-                  colorVariant: row.color_variant,
-                  type: row.type,
-                  requiresPrint: row.requires_print || false,
-                  requiresInlay: row.requires_inlay || false,
-                  requiresQc: row.requires_qc || false,
-                  unit: row.unit || 'pc',
-                  minStockLevel: row.min_stock_level || 50,
-                  active: row.active !== false,
-                });
-                created++;
-              } catch { failed++; }
+            try {
+              const payload = items.map(row => ({
+                skuId: row.sku_id,
+                name: row.name,
+                category: row.category,
+                sizeSpec: row.size_spec,
+                colorVariant: row.color_variant,
+                type: row.type,
+                requiresPrint: row.requires_print || false,
+                requiresInlay: row.requires_inlay || false,
+                requiresQc: row.requires_qc || false,
+                unit: row.unit || 'pc',
+                minStockLevel: row.min_stock_level || 50,
+                active: row.active !== false,
+              }));
+              await api.mutations.packagingSkus.bulkCreate(payload);
+              toast.success(`Imported ${items.length} SKUs`);
+              setShowBulkUpload(false);
+              queryClient.invalidateQueries({ queryKey: ['packagingSKUs'] });
+            } catch (e: any) {
+              toast.error(e.message || 'Failed to bulk import SKUs');
             }
-            toast.success(`Imported ${created} SKUs${failed ? `, ${failed} failed` : ''}`);
-            setShowBulkUpload(false);
-            await loadData();
           }}
           onClose={() => setShowBulkUpload(false)}
         />

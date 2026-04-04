@@ -3,17 +3,24 @@
 // Full CRUD: list, search, add, edit, drill-down with analytics charts, CSV export
 // Grid/Row view toggle + brand logo upload
 import { useState, useMemo, useCallback, useRef } from 'react';
+import { useBrands } from '@/hooks/useBrands';
 import { PageHeader, StatusBadge } from '@/components/shared';
-import { mockBrands, lookupBrandMadeIn } from '@/lib/mock-brands';
+import { lookupBrandMadeIn } from '@/lib/mock-brands';
 import { mockPerfumes, mockAuras } from '@/lib/mock-data';
 import type { Brand, Perfume, AuraColor } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { 
+  AlertDialog, AlertDialogAction, AlertDialogCancel, 
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter, 
+  AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger 
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { useFileUpload } from '@/hooks/useFileUpload';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend,
 } from 'recharts';
@@ -21,7 +28,7 @@ import {
   Building2, Plus, Search, MapPin, Edit2, Check, X, ArrowLeft,
   Package, FlaskConical, ChevronRight, SortAsc, SortDesc, Download,
   TrendingUp, BarChart3, PieChart as PieChartIcon, Eye,
-  LayoutGrid, List, Upload, ImageIcon, Loader2,
+  LayoutGrid, List, Upload, ImageIcon, Loader2, Trash2,
 } from 'lucide-react';
 
 const AURA_HEX: Record<AuraColor, string> = {
@@ -96,12 +103,16 @@ function BrandLogoUpload({ currentUrl, onUpload }: { currentUrl?: string; onUplo
 }
 
 // ---- Brand Detail with Analytics ----
-function BrandDetail({ brand, perfumes, onBack, onEdit }: {
+function BrandDetail({ brand, perfumes, onBack, onEdit, onDelete, isDeleting }: {
   brand: Brand;
   perfumes: Perfume[];
   onBack: () => void;
   onEdit: (b: Brand) => void;
+  onDelete: (id: string) => void;
+  isDeleting?: boolean;
 }) {
+  const { hasRole, hasPermission } = useAuth();
+  const canDelete = hasRole('owner') || hasRole('admin') || hasPermission('master_data.write');
   const brandPerfumes = perfumes.filter(p => p.brand.toLowerCase() === brand.name.toLowerCase());
   const inStock = brandPerfumes.filter(p => p.in_stock).length;
   const [editing, setEditing] = useState(false);
@@ -207,6 +218,37 @@ function BrandDetail({ brand, perfumes, onBack, onEdit }: {
               </>
             ) : (
               <>
+                {canDelete && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button size="sm" variant="destructive" disabled={isDeleting}>
+                        {isDeleting ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
+                        {isDeleting ? 'Deleting...' : 'Delete'}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This action cannot be undone. This will permanently delete the brand <strong>{brand.name}</strong> from our servers.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={(e) => {
+                            e.preventDefault();
+                            onDelete(brand.id || brand.brand_id);
+                          }}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          disabled={isDeleting}
+                        >
+                          {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
                 <Button size="sm" variant="outline" onClick={handleExportPerfumes}>
                   <Download className="w-3.5 h-3.5 mr-1" /> Export CSV
                 </Button>
@@ -386,7 +428,7 @@ function BrandDetail({ brand, perfumes, onBack, onEdit }: {
 }
 
 // ---- Add Brand Dialog ----
-function AddBrandForm({ onAdd, onCancel }: { onAdd: (b: Brand) => void; onCancel: () => void }) {
+function AddBrandForm({ onAdd, onCancel, isAdding }: { onAdd: (b: Brand) => void; onCancel: () => void; isAdding?: boolean }) {
   const [name, setName] = useState('');
   const [madeIn, setMadeIn] = useState('');
   const [notes, setNotes] = useState('');
@@ -404,7 +446,6 @@ function AddBrandForm({ onAdd, onCancel }: { onAdd: (b: Brand) => void; onCancel
       created_at: new Date().toISOString(),
     };
     onAdd(newBrand);
-    toast.success(`Brand "${newBrand.name}" added`);
   };
 
   return (
@@ -435,9 +476,10 @@ function AddBrandForm({ onAdd, onCancel }: { onAdd: (b: Brand) => void; onCancel
         </div>
       </div>
       <div className="flex justify-end gap-2 pt-2">
-        <Button variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" onClick={handleSubmit}>
-          <Plus className="w-3.5 h-3.5 mr-1" /> Add Brand
+        <Button variant="outline" size="sm" onClick={onCancel} disabled={isAdding}>Cancel</Button>
+        <Button size="sm" onClick={handleSubmit} disabled={isAdding}>
+          {isAdding ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Plus className="w-3.5 h-3.5 mr-1" />}
+          {isAdding ? 'Adding Brand...' : 'Add Brand'}
         </Button>
       </div>
     </div>
@@ -450,7 +492,7 @@ type SortDir = 'asc' | 'desc';
 type ViewMode = 'grid' | 'row';
 
 export default function BrandsPage() {
-  const [brands, setBrands] = useState<Brand[]>(mockBrands);
+  const { brands, isLoading, addBrand, editBrand, removeBrand } = useBrands();
   const [search, setSearch] = useState('');
   const [countryFilter, setCountryFilter] = useState('');
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
@@ -497,19 +539,22 @@ export default function BrandsPage() {
   }, [sortField]);
 
   const handleAddBrand = useCallback((b: Brand) => {
-    setBrands(prev => [...prev, b]);
-    setShowAdd(false);
-  }, []);
+    addBrand.mutate(b, {
+      onSuccess: () => setShowAdd(false)
+    });
+  }, [addBrand]);
 
   const handleEditBrand = useCallback((updated: Brand) => {
-    setBrands(prev => prev.map(b => b.brand_id === updated.brand_id ? updated : b));
-    setSelectedBrand(updated);
-  }, []);
+    editBrand.mutate({ id: updated.id || updated.brand_id, data: updated }, {
+      onSuccess: () => setSelectedBrand(updated)
+    });
+  }, [editBrand]);
 
   const handleDeleteBrand = useCallback((id: string) => {
-    setBrands(prev => prev.map(b => b.brand_id === id ? { ...b, active: false } : b));
-    toast.success('Brand archived');
-  }, []);
+    removeBrand.mutate(id, {
+      onSuccess: () => toast.success('Brand archived')
+    });
+  }, [removeBrand]);
 
   // CSV Export for all brands
   const handleExportAllBrands = () => {
@@ -526,13 +571,28 @@ export default function BrandsPage() {
   if (selectedBrand) {
     return (
       <div className="p-6 max-w-5xl">
-        <BrandDetail brand={selectedBrand} perfumes={mockPerfumes} onBack={() => setSelectedBrand(null)} onEdit={handleEditBrand} />
+        <BrandDetail 
+          brand={selectedBrand} 
+          perfumes={mockPerfumes} 
+          onBack={() => setSelectedBrand(null)} 
+          onEdit={handleEditBrand}
+          isDeleting={removeBrand.isPending}
+          onDelete={(id) => {
+            handleDeleteBrand(id);
+            setSelectedBrand(null);
+          }}
+        />
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="relative p-6 space-y-6">
+      {isLoading && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/50 rounded-xl backdrop-blur-sm">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
+      )}
       <PageHeader
         title="Brands"
         subtitle={`${brands.filter(b => b.active).length} brands registered · ${countries.length} countries`}
@@ -548,7 +608,7 @@ export default function BrandsPage() {
         }
       />
 
-      {showAdd && <AddBrandForm onAdd={handleAddBrand} onCancel={() => setShowAdd(false)} />}
+      {showAdd && <AddBrandForm onAdd={handleAddBrand} onCancel={() => setShowAdd(false)} isAdding={addBrand.isPending} />}
 
       {/* Filters */}
       <div className="flex items-center gap-3">

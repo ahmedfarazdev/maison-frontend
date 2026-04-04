@@ -8,7 +8,7 @@ import type {
   SealedBottle, BottleLedgerEvent, VaultLocation, Supplier,
   SupplierPurchase, Perfume, BottleStatus, BottleType,
 } from '@/types';
-import { mockSealedBottles, mockBottleLedger, mockLocations, mockSuppliers } from '@/lib/mock-data';
+import { mockSealedBottles, mockBottleLedger, mockSuppliers } from '@/lib/mock-data';
 
 // ---- Document Types ----
 export type DocumentCategory = 'invoice' | 'certificate_of_authenticity' | 'shipping_document' | 'packing_list' | 'customs_declaration' | 'quality_report' | 'insurance' | 'other';
@@ -93,7 +93,7 @@ export function subscribe(fn: Listener): () => void {
 let docCounter = 1;
 let _sealedBottles: SealedBottle[] = [...mockSealedBottles];
 let _bottleLedger: BottleLedgerEvent[] = [...mockBottleLedger];
-let _locations: VaultLocation[] = [...mockLocations];
+let _locations: VaultLocation[] = [];
 let _suppliers: Supplier[] = [...mockSuppliers];
 let _purchaseOrders: PurchaseOrder[] = initPOsFromSuppliers();
 

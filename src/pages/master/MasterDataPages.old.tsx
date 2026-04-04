@@ -8,11 +8,6 @@ import { useState, useCallback, useEffect } from 'react';
 import { PageHeader, SectionCard, StatusBadge } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import { useTaxonomies } from '@/hooks/useTaxonomies';
-import { useTags } from '@/hooks/useTags';
-import { useLocations } from '@/hooks/useLocations';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Loader2 } from 'lucide-react';
 import { api } from '@/lib/api-client';
 import { mockFilterConfig } from '@/lib/mock-data';
 import {
@@ -71,13 +66,14 @@ function InlineTextarea({ value, onChange, className, rows = 2 }: {
 
 // ---- Aura Definitions (Editable) ----
 export function AuraDefinitions() {
-  const { aurasQuery, createAura, updateAura, deleteAura } = useTaxonomies();
+  const { data: aurasRes } = useApiQuery(() => api.master.auras(), []);
+  const [auras, setAuras] = useState<AuraDefinition[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<AuraDefinition>>({});
 
-  const allAuras = (aurasQuery.data || []) as AuraDefinition[];
-  const isPending = createAura.isPending || updateAura.isPending || deleteAura.isPending;
+  // Merge API data with local edits
+  const allAuras = auras.length > 0 ? auras : (aurasRes || []) as AuraDefinition[];
 
   const startEdit = (a: AuraDefinition) => {
     setEditingId(a.aura_id);
@@ -85,33 +81,35 @@ export function AuraDefinitions() {
     setExpanded(a.aura_id);
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editingId || !editForm) return;
-
-    const payload = {
-      name: editForm.name || 'New Aura',
-      color: editForm.color || 'Red',
-      colorHex: editForm.color_hex || '#888888',
-      element: editForm.element || '',
-      keywords: Array.isArray(editForm.keywords) ? editForm.keywords : typeof editForm.keywords === 'string' ? JSON.parse(editForm.keywords) : [],
-      persona: editForm.persona || '',
-      tagline: editForm.tagline || '',
-      description: editForm.description || '',
-      coreDrive: editForm.core_drive || '',
-      balanceAura: editForm.balance_aura || '',
-    };
-    
-    const options = {
-      onSuccess: () => {
-        setEditingId(null);
-        setEditForm({});
+    try {
+      const payload = {
+        auraId: editingId,
+        name: editForm.name || 'New Aura',
+        color: editForm.color || 'Red',
+        colorHex: editForm.color_hex || '#888888',
+        element: editForm.element || '',
+        keywords: JSON.stringify(editForm.keywords || []),
+        persona: editForm.persona || '',
+        tagline: editForm.tagline || '',
+        description: editForm.description || '',
+        coreDrive: editForm.core_drive || '',
+        balanceAura: editForm.balance_aura || '',
+      };
+      if (editingId.startsWith('aura-new-')) {
+        await api.mutations.auras.create(payload);
+      } else {
+        await api.mutations.auras.update(editingId, payload);
       }
-    };
-
-    if (editingId.startsWith('aura-new-')) {
-      createAura.mutate(payload, options);
-    } else {
-      updateAura.mutate({ id: editingId, data: payload }, options);
+      const updated = allAuras.map(a => a.aura_id === editingId ? { ...a, ...editForm } as AuraDefinition : a);
+      setAuras(updated);
+      setEditingId(null);
+      setEditForm({});
+      toast.success('Aura definition saved to database');
+    } catch (e) {
+      console.error('[Aura] Save failed:', e);
+      toast.error('Failed to save aura definition');
     }
   };
 
@@ -131,7 +129,9 @@ export function AuraDefinitions() {
       core_drive: '',
       balance_aura: '',
     };
+    setAuras([...allAuras, newAura]);
     startEdit(newAura);
+    toast.info('New aura created — fill in the details');
   };
 
   const updateField = (field: keyof AuraDefinition, value: unknown) => {
@@ -295,31 +295,11 @@ export function AuraDefinitions() {
                     </div>
                     {isEditing && (
                       <div className="flex justify-end gap-2 pt-2 border-t border-border/50">
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button size="sm" variant="destructive" className="gap-1.5 mr-auto">
-                              <Trash2 className="w-3.5 h-3.5" /> Delete
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete {data.name}?</AlertDialogTitle>
-                              <AlertDialogDescription>This action cannot be undone. This taxonomy might be referenced by several products.</AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => deleteAura.mutate(data.aura_id, { onSuccess: () => { setEditingId(null); } })} className="bg-destructive hover:bg-destructive/90 text-white">
-                                {deleteAura.isPending ? <Loader2 className="w-3 h-3 animate-spin"/> : 'Yes, Delete'}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                        <Button size="sm" variant="outline" onClick={cancelEdit} className="gap-1.5" disabled={isPending}>
+                        <Button size="sm" variant="outline" onClick={cancelEdit} className="gap-1.5">
                           <X className="w-3.5 h-3.5" /> Cancel
                         </Button>
-                        <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveEdit} disabled={isPending}>
-                          {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} 
-                          Save Changes
+                        <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveEdit}>
+                          <Save className="w-3.5 h-3.5" /> Save Changes
                         </Button>
                       </div>
                     )}
@@ -336,7 +316,10 @@ export function AuraDefinitions() {
 
 // ---- Fragrance Families (Editable) ----
 export function FragranceFamilies() {
-  const { familiesQuery, subFamiliesQuery, updateFamily, updateSubFamily } = useTaxonomies();
+  const { data: familiesRes } = useApiQuery(() => api.master.families(), []);
+  const { data: subRes } = useApiQuery(() => api.master.subFamilies(), []);
+  const [localFamilies, setLocalFamilies] = useState<Family[] | null>(null);
+  const [localSubs, setLocalSubs] = useState<SubFamily[] | null>(null);
   const [expandedFamily, setExpandedFamily] = useState<string | null>(null);
   const [expandedSub, setExpandedSub] = useState<string | null>(null);
   const [editingFamily, setEditingFamily] = useState<string | null>(null);
@@ -344,8 +327,8 @@ export function FragranceFamilies() {
   const [familyForm, setFamilyForm] = useState<Partial<Family>>({});
   const [subForm, setSubForm] = useState<Partial<SubFamily>>({});
 
-  const families = (familiesQuery.data || []) as Family[];
-  const subs = (subFamiliesQuery.data || []) as SubFamily[];
+  const families = localFamilies || (familiesRes || []) as Family[];
+  const subs = localSubs || (subRes || []) as SubFamily[];
 
   const FAMILY_ICONS: Record<string, React.ReactNode> = {
     FRESH: <Wind className="w-5 h-5" />, FLORAL: <Flower2 className="w-5 h-5" />,
@@ -362,23 +345,12 @@ export function FragranceFamilies() {
     setExpandedFamily(f.main_family_id);
   };
 
-  const saveFamilyEdit = async () => {
-    if (!editingFamily || !familyForm.name) return;
-    try {
-      await updateFamily.mutateAsync({
-        id: editingFamily,
-        data: {
-          name: familyForm.name,
-          tagline: familyForm.tagline,
-          description: familyForm.description,
-          displayOrder: familyForm.display_order
-        }
-      });
-      setEditingFamily(null);
-      toast.success('Family updated');
-    } catch (e) {
-      toast.error('Failed to update family');
-    }
+  const saveFamilyEdit = () => {
+    if (!editingFamily) return;
+    const updated = families.map(f => f.main_family_id === editingFamily ? { ...f, ...familyForm } as Family : f);
+    setLocalFamilies(updated);
+    setEditingFamily(null);
+    toast.success('Family updated');
   };
 
   const startEditSub = (s: SubFamily) => {
@@ -387,24 +359,12 @@ export function FragranceFamilies() {
     setExpandedSub(s.sub_family_id);
   };
 
-  const saveSubEdit = async () => {
-    if (!editingSub || !subForm.name) return;
-    try {
-      await updateSubFamily.mutateAsync({
-        id: editingSub,
-        data: {
-          mainFamilyId: subForm.main_family_id || '',
-          name: subForm.name,
-          description: subForm.description,
-          prominentNotes: subForm.prominent_notes,
-          displayOrder: subForm.display_order
-        }
-      });
-      setEditingSub(null);
-      toast.success('Sub-family updated');
-    } catch (e) {
-      toast.error('Failed to update sub-family');
-    }
+  const saveSubEdit = () => {
+    if (!editingSub) return;
+    const updated = subs.map(s => s.sub_family_id === editingSub ? { ...s, ...subForm } as SubFamily : s);
+    setLocalSubs(updated);
+    setEditingSub(null);
+    toast.success('Sub-family updated');
   };
 
   const addFamily = () => {

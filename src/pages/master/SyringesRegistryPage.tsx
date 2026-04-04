@@ -8,17 +8,28 @@ import { useState, useMemo, useCallback } from 'react';
 import { PageHeader, StatusBadge } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { mockSyringes, mockPerfumes } from '@/lib/mock-data';
+import { mockPerfumes } from '@/lib/mock-data';
 import { useApiQuery } from '@/hooks/useApiQuery';
+import { useSyringes } from '@/hooks/useSyringes';
 import { api } from '@/lib/api-client';
 import type { Syringe, SyringeStatus, SyringeSize, Perfume } from '@/types';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
   Pipette, Plus, Search, Edit2, Check, X, Download,
-  Activity, AlertCircle, Trash2, RefreshCw, Sparkles,
-  LayoutGrid, List, Lock, Eye, EyeOff,
+  Activity, AlertCircle, Trash2, RefreshCw,
+  LayoutGrid, List, Lock, Loader2,
 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 // ---- Constants ----
 const STATUS_CONFIG: Record<SyringeStatus, { label: string; variant: 'success' | 'warning' | 'muted' | 'destructive'; icon: React.ElementType }> = {
@@ -54,11 +65,12 @@ function exportSyringesCsv(syringes: Syringe[]) {
 }
 
 // ---- Add/Edit Syringe Dialog ----
-function SyringeFormDialog({ syringe, nextSeq, perfumes, existingAssignments, onSave, onClose }: {
+function SyringeFormDialog({ syringe, nextSeq, perfumes, existingAssignments, isPending, onSave, onClose }: {
   syringe?: Syringe;
   nextSeq: number;
   perfumes: Perfume[];
   existingAssignments: Set<string>;
+  isPending: boolean;
   onSave: (s: Syringe) => void;
   onClose: () => void;
 }) {
@@ -122,8 +134,6 @@ function SyringeFormDialog({ syringe, nextSeq, perfumes, existingAssignments, on
       created_at: syringe?.created_at || new Date().toISOString(),
     };
     onSave(saved);
-    onClose();
-    toast.success(isEdit ? `Syringe ${saved.syringe_id} updated` : `Syringe ${saved.syringe_id} created`);
   };
 
   return (
@@ -249,9 +259,10 @@ function SyringeFormDialog({ syringe, nextSeq, perfumes, existingAssignments, on
           </div>
         </div>
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-border sticky bottom-0 bg-card">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={handleSubmit}>
-            <Check className="w-3.5 h-3.5" /> {isEdit ? 'Save Changes' : 'Create Syringe'}
+          <Button variant="outline" onClick={onClose} disabled={isPending}>Cancel</Button>
+          <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={handleSubmit} disabled={isPending}>
+            {isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            {isPending ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save Changes' : 'Create Syringe')}
           </Button>
         </div>
       </div>
@@ -261,13 +272,16 @@ function SyringeFormDialog({ syringe, nextSeq, perfumes, existingAssignments, on
 
 // ---- Main Page ----
 export default function SyringesRegistryPage() {
-  const [syringes, setSyringes] = useState<Syringe[]>([...mockSyringes]);
+  const { syringesQuery, createSyringe, updateSyringe, deleteSyringe } = useSyringes();
+  const syringes = syringesQuery.data || [];
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterSize, setFilterSize] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'row'>('grid');
   const [showForm, setShowForm] = useState(false);
   const [editingSyringe, setEditingSyringe] = useState<Syringe | undefined>(undefined);
+  const [syringeToDelete, setSyringeToDelete] = useState<string | null>(null);
 
   // Load perfumes from API for assignment
   const { data: perfumesData } = useApiQuery(() => api.master.perfumes());
@@ -305,23 +319,29 @@ export default function SyringesRegistryPage() {
   const totalUses = syringes.reduce((sum, s) => sum + s.use_count, 0);
   const nextSeq = syringes.length > 0 ? Math.max(...syringes.map(s => s.sequence_number)) + 1 : 1;
 
-  const handleSaveSyringe = useCallback((s: Syringe) => {
-    setSyringes(prev => {
-      const idx = prev.findIndex(p => p.syringe_id === s.syringe_id);
-      if (idx >= 0) {
-        const updated = [...prev];
-        updated[idx] = s;
-        return updated;
+  const handleSaveSyringe = async (s: Syringe) => {
+    try {
+      if (editingSyringe) {
+        await updateSyringe.mutateAsync({ id: s.syringe_id, data: s });
+      } else {
+        await createSyringe.mutateAsync(s);
       }
-      return [...prev, s];
-    });
-  }, []);
+      setShowForm(false);
+      setEditingSyringe(undefined);
+    } catch (err) {
+      // Error is caught by global handlers
+    }
+  };
 
-  const handleDeleteSyringe = useCallback((id: string) => {
-    if (!confirm(`Delete syringe ${id}? This action cannot be undone.`)) return;
-    setSyringes(prev => prev.filter(s => s.syringe_id !== id));
-    toast.success(`Syringe ${id} deleted`);
-  }, []);
+  const handleConfirmDelete = async () => {
+    if (!syringeToDelete) return;
+    try {
+      await deleteSyringe.mutateAsync(syringeToDelete);
+      setSyringeToDelete(null);
+    } catch (err) {
+      // Error handled globally
+    }
+  };
 
   return (
     <div>
@@ -440,7 +460,7 @@ export default function SyringesRegistryPage() {
                         className="text-muted-foreground hover:text-gold p-1">
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
-                      <button onClick={() => handleDeleteSyringe(s.syringe_id)}
+                      <button onClick={() => setSyringeToDelete(s.syringe_id)}
                         className="text-muted-foreground hover:text-destructive p-1">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -558,7 +578,7 @@ export default function SyringesRegistryPage() {
                             className="text-muted-foreground hover:text-gold p-1.5 rounded-md hover:bg-muted/50">
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
-                          <button onClick={() => handleDeleteSyringe(s.syringe_id)}
+                          <button onClick={() => setSyringeToDelete(s.syringe_id)}
                             className="text-muted-foreground hover:text-destructive p-1.5 rounded-md hover:bg-muted/50">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -587,10 +607,34 @@ export default function SyringesRegistryPage() {
           nextSeq={nextSeq}
           perfumes={perfumes}
           existingAssignments={existingAssignments}
+          isPending={createSyringe.isPending || updateSyringe.isPending}
           onSave={handleSaveSyringe}
           onClose={() => { setShowForm(false); setEditingSyringe(undefined); }}
         />
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!syringeToDelete} onOpenChange={(open) => !open && setSyringeToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Syringe</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete syringe <strong className="text-foreground">{syringeToDelete}</strong>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteSyringe.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={(e) => { e.preventDefault(); handleConfirmDelete(); }}
+              disabled={deleteSyringe.isPending} 
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              {deleteSyringe.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
+              {deleteSyringe.isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

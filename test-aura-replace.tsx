@@ -85,41 +85,40 @@ export function AuraDefinitions() {
     setExpanded(a.aura_id);
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editingId || !editForm) return;
-
-    const payload = {
-      name: editForm.name || 'New Aura',
-      color: editForm.color || 'Red',
-      colorHex: editForm.color_hex || '#888888',
-      element: editForm.element || '',
-      keywords: Array.isArray(editForm.keywords) ? editForm.keywords : typeof editForm.keywords === 'string' ? JSON.parse(editForm.keywords) : [],
-      persona: editForm.persona || '',
-      tagline: editForm.tagline || '',
-      description: editForm.description || '',
-      coreDrive: editForm.core_drive || '',
-      balanceAura: editForm.balance_aura || '',
-    };
-    
-    const options = {
-      onSuccess: () => {
-        setEditingId(null);
-        setEditForm({});
+    try {
+      const payload = {
+        name: editForm.name || 'New Aura',
+        color: editForm.color || 'Red',
+        colorHex: editForm.color_hex || '#888888',
+        element: editForm.element || '',
+        keywords: Array.isArray(editForm.keywords) ? editForm.keywords : typeof editForm.keywords === 'string' ? JSON.parse(editForm.keywords) : [],
+        persona: editForm.persona || '',
+        tagline: editForm.tagline || '',
+        description: editForm.description || '',
+        coreDrive: editForm.core_drive || '',
+        balanceAura: editForm.balance_aura || '',
+      };
+      if (editingId.startsWith('aura-new-')) {
+        await createAura.mutateAsync(payload, { onSuccess: () => { setEditingId(null); setEditForm({}); }});
+      } else {
+        await updateAura.mutateAsync({ id: editingId, data: payload }, { onSuccess: () => { setEditingId(null); setEditForm({}); }});
       }
-    };
-
-    if (editingId.startsWith('aura-new-')) {
-      createAura.mutate(payload, options);
-    } else {
-      updateAura.mutate({ id: editingId, data: payload }, options);
+    } catch (e) {
+      console.error('[Aura] Save failed:', e);
     }
+  };
+
+  const handleDelete = async (id: string) => {
+    await deleteAura.mutateAsync(id, { onSuccess: () => { if (expanded === id) setExpanded(null); } });
   };
 
   const cancelEdit = () => { setEditingId(null); setEditForm({}); };
 
   const addAura = () => {
     const newAura: AuraDefinition = {
-      aura_id: `aura-new-${Date.now()}`,
+      aura_id: \ura-new-\\,
       name: 'New Aura',
       color: 'Red' as AuraColor,
       color_hex: '#888888',
@@ -131,7 +130,9 @@ export function AuraDefinitions() {
       core_drive: '',
       balance_aura: '',
     };
-    startEdit(newAura);
+    setEditingId(newAura.aura_id);
+    setEditForm(newAura);
+    setExpanded(newAura.aura_id);
   };
 
   const updateField = (field: keyof AuraDefinition, value: unknown) => {
@@ -295,31 +296,11 @@ export function AuraDefinitions() {
                     </div>
                     {isEditing && (
                       <div className="flex justify-end gap-2 pt-2 border-t border-border/50">
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button size="sm" variant="destructive" className="gap-1.5 mr-auto">
-                              <Trash2 className="w-3.5 h-3.5" /> Delete
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete {data.name}?</AlertDialogTitle>
-                              <AlertDialogDescription>This action cannot be undone. This taxonomy might be referenced by several products.</AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => deleteAura.mutate(data.aura_id, { onSuccess: () => { setEditingId(null); } })} className="bg-destructive hover:bg-destructive/90 text-white">
-                                {deleteAura.isPending ? <Loader2 className="w-3 h-3 animate-spin"/> : 'Yes, Delete'}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                        <Button size="sm" variant="outline" onClick={cancelEdit} className="gap-1.5" disabled={isPending}>
+                        <Button size="sm" variant="outline" onClick={cancelEdit} className="gap-1.5">
                           <X className="w-3.5 h-3.5" /> Cancel
                         </Button>
-                        <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveEdit} disabled={isPending}>
-                          {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} 
-                          Save Changes
+                        <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveEdit}>
+                          <Save className="w-3.5 h-3.5" /> Save Changes
                         </Button>
                       </div>
                     )}
@@ -336,7 +317,10 @@ export function AuraDefinitions() {
 
 // ---- Fragrance Families (Editable) ----
 export function FragranceFamilies() {
-  const { familiesQuery, subFamiliesQuery, updateFamily, updateSubFamily } = useTaxonomies();
+  const { data: familiesRes } = useApiQuery(() => api.master.families(), []);
+  const { data: subRes } = useApiQuery(() => api.master.subFamilies(), []);
+  const [localFamilies, setLocalFamilies] = useState<Family[] | null>(null);
+  const [localSubs, setLocalSubs] = useState<SubFamily[] | null>(null);
   const [expandedFamily, setExpandedFamily] = useState<string | null>(null);
   const [expandedSub, setExpandedSub] = useState<string | null>(null);
   const [editingFamily, setEditingFamily] = useState<string | null>(null);
@@ -344,8 +328,8 @@ export function FragranceFamilies() {
   const [familyForm, setFamilyForm] = useState<Partial<Family>>({});
   const [subForm, setSubForm] = useState<Partial<SubFamily>>({});
 
-  const families = (familiesQuery.data || []) as Family[];
-  const subs = (subFamiliesQuery.data || []) as SubFamily[];
+  const families = localFamilies || (familiesRes?.data || []) as Family[];
+  const subs = localSubs || (subRes?.data || []) as SubFamily[];
 
   const FAMILY_ICONS: Record<string, React.ReactNode> = {
     FRESH: <Wind className="w-5 h-5" />, FLORAL: <Flower2 className="w-5 h-5" />,
@@ -362,23 +346,12 @@ export function FragranceFamilies() {
     setExpandedFamily(f.main_family_id);
   };
 
-  const saveFamilyEdit = async () => {
-    if (!editingFamily || !familyForm.name) return;
-    try {
-      await updateFamily.mutateAsync({
-        id: editingFamily,
-        data: {
-          name: familyForm.name,
-          tagline: familyForm.tagline,
-          description: familyForm.description,
-          displayOrder: familyForm.display_order
-        }
-      });
-      setEditingFamily(null);
-      toast.success('Family updated');
-    } catch (e) {
-      toast.error('Failed to update family');
-    }
+  const saveFamilyEdit = () => {
+    if (!editingFamily) return;
+    const updated = families.map(f => f.main_family_id === editingFamily ? { ...f, ...familyForm } as Family : f);
+    setLocalFamilies(updated);
+    setEditingFamily(null);
+    toast.success('Family updated');
   };
 
   const startEditSub = (s: SubFamily) => {
@@ -387,24 +360,12 @@ export function FragranceFamilies() {
     setExpandedSub(s.sub_family_id);
   };
 
-  const saveSubEdit = async () => {
-    if (!editingSub || !subForm.name) return;
-    try {
-      await updateSubFamily.mutateAsync({
-        id: editingSub,
-        data: {
-          mainFamilyId: subForm.main_family_id || '',
-          name: subForm.name,
-          description: subForm.description,
-          prominentNotes: subForm.prominent_notes,
-          displayOrder: subForm.display_order
-        }
-      });
-      setEditingSub(null);
-      toast.success('Sub-family updated');
-    } catch (e) {
-      toast.error('Failed to update sub-family');
-    }
+  const saveSubEdit = () => {
+    if (!editingSub) return;
+    const updated = subs.map(s => s.sub_family_id === editingSub ? { ...s, ...subForm } as SubFamily : s);
+    setLocalSubs(updated);
+    setEditingSub(null);
+    toast.success('Sub-family updated');
   };
 
   const addFamily = () => {
@@ -1414,7 +1375,7 @@ export function PricingRules() {
 // ---- Vault Locations ----
 export function VaultLocations() {
   const { data: locRes } = useApiQuery(() => api.master.locations(), []);
-  const locations = (locRes || []) as VaultLocation[];
+  const locations = (locRes?.data || []) as VaultLocation[];
 
   return (
     <div>
@@ -1458,7 +1419,7 @@ export function VaultLocations() {
 // ---- Suppliers ----
 export function SuppliersPage() {
   const { data: supRes } = useApiQuery(() => api.master.suppliers(), []);
-  const suppliers = (supRes || []) as Supplier[];
+  const suppliers = (supRes?.data || []) as Supplier[];
 
   return (
     <div>
@@ -1490,7 +1451,7 @@ export function SuppliersPage() {
 // ---- Syringes Registry ----
 export function SyringesRegistry() {
   const { data: syrRes } = useApiQuery(() => api.master.syringes(), []);
-  const syringes = (syrRes || []) as Syringe[];
+  const syringes = (syrRes?.data || []) as Syringe[];
 
   return (
     <div>
@@ -1537,7 +1498,7 @@ export function SyringesRegistry() {
 // ---- Packaging SKUs ----
 export function PackagingSKUs() {
   const { data: skusRes } = useApiQuery(() => api.master.packagingSKUs(), []);
-  const skus = (skusRes || []) as PackagingSKU[];
+  const skus = (skusRes?.data || []) as PackagingSKU[];
 
   return (
     <div>
@@ -1573,3 +1534,4 @@ export function PackagingSKUs() {
     </div>
   );
 }
+

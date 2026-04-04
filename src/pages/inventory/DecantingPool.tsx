@@ -50,8 +50,8 @@ export default function DecantingPool() {
   const { data: bottlesRes, refetch: refetchBottles } = useApiQuery(() => api.inventory.decantBottles(), []);
   const { data: perfumesRes } = useApiQuery(() => api.master.perfumes(), []);
   const { data: ledgerRes, refetch: refetchLedger } = useApiQuery(() => api.ledger.decant(), []);
-  const bottles = (bottlesRes?.data || []) as DecantBottle[];
-  const perfumes = (perfumesRes?.data || []) as Perfume[];
+  const bottles = (bottlesRes || []) as DecantBottle[];
+  const perfumes = (perfumesRes || []) as Perfume[];
   const ledgerEvents = ((ledgerRes as any)?.data || []) as any[];
 
   const [search, setSearch] = useState('');

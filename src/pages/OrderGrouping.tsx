@@ -117,8 +117,8 @@ export default function OrderGrouping() {
   const { data: ordersRes } = useApiQuery(() => api.orders.list(), []);
   const { data: cyclesRes } = useApiQuery(() => api.subscriptions.cycles(), []);
 
-  const allOrders = (ordersRes?.data || []) as Order[];
-  const cycles = (cyclesRes?.data || []) as SubscriptionCycle[];
+  const allOrders = (ordersRes || []) as Order[];
+  const cycles = (cyclesRes || []) as SubscriptionCycle[];
   const activeCycle = cycles.find(c => ['collecting', 'processing', 'active'].includes(c.status));
 
   // Only show actionable orders (new, processing)

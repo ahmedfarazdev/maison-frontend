@@ -1591,7 +1591,7 @@ function UsersSettings() {
   const handleToggleActive = (userId: string) => {
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, active: !u.active } : u));
     const user = users.find(u => u.id === userId);
-    toast.success(`${user?.name} ${user?.active ? 'deactivated' : 'activated'}`);
+    toast.success(`${user?.fullName} ${user?.active ? 'deactivated' : 'activated'}`);
   };
 
   const handleInvite = () => {

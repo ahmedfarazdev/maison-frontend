@@ -15,15 +15,20 @@ export type UserRole =
   | 'vault_guardian'
   | 'pod_leader'
   | 'pod_senior'
-  | 'pod_junior';
+  | 'pod_junior'
+  | 'user'
+  | 'vault_ops'
+  | 'fulfillment_ops';
 
 export interface User {
   id: string;
   email: string;
-  name: string;
+  fullName: string;
   role: UserRole;
-  avatar_url?: string;
-  created_at: string;
+  roles: string[];
+  permissions: string[];
+  avatarUrl?: string;
+  createdAt: string;
 }
 
 export interface AuthState {
@@ -90,6 +95,7 @@ export interface Perfume {
 
 // ---- Brands ----
 export interface Brand {
+  id?: string; // Database UUID (added for Supabase connection)
   brand_id: string;
   name: string;
   made_in: string;
@@ -220,6 +226,7 @@ export interface VaultZone {
 }
 
 export interface VaultLocation {
+  id?: string;
   location_id: string;
   location_code: string;    // auto-generated: {VAULT}-{ZONE}-{SHELF}-{SLOT}
   vault: string;            // 'Main', 'Decant', 'Staging'

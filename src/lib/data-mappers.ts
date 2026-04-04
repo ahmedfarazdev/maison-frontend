@@ -158,19 +158,20 @@ export function mapPackagingSku(row: any): PackagingSKU {
 // ---- Vault Location ----
 export function mapVaultLocation(row: any): VaultLocation {
   return {
-    location_id: row.locationId,
-    location_code: row.locationCode,
+    id: row.id,
+    location_id: row.location_id ?? row.locationId,
+    location_code: row.location_code ?? row.locationCode,
     vault: row.vault,
     zone: row.zone,
     shelf: row.shelf,
     slot: row.slot,
     position: row.position ?? '',
-    code: row.code ?? row.locationCode,
+    code: row.code ?? row.location_code ?? row.locationCode,
     type: row.type,
     occupied: row.occupied ?? false,
-    bottle_id: row.bottleId ?? undefined,
-    master_id: row.masterId ?? undefined,
-    perfume_name: row.perfumeName ?? undefined,
+    bottle_id: row.bottle_id ?? row.bottleId ?? undefined,
+    master_id: row.master_id ?? row.masterId ?? undefined,
+    perfume_name: row.perfume_name ?? row.perfumeName ?? undefined,
   };
 }
 
