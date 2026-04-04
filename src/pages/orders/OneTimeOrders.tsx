@@ -234,12 +234,12 @@ export default function OneTimeOrders() {
   useEffect(() => {
     (async () => {
       try {
-        const settings = await api.settings.list();
-        const map = new Map((settings as any[]).map((s: any) => [s.key, s.value]));
-        if (map.has('cutoff_start')) setCutoffStart(map.get('cutoff_start')!);
-        if (map.has('cutoff_end')) setCutoffEnd(map.get('cutoff_end')!);
-        if (map.has('pack_lead_days')) setPackLeadDays(parseInt(map.get('pack_lead_days')!) || 1);
-        if (map.has('delivery_lead_days')) setDeliveryLeadDays(parseInt(map.get('delivery_lead_days')!) || 2);
+        const res = await api.settings.list();
+        const map = new Map(res.data.map((s: any) => [s.key, s.value]));
+        if (map.has('cutoff_start')) setCutoffStart(String(map.get('cutoff_start')));
+        if (map.has('cutoff_end')) setCutoffEnd(String(map.get('cutoff_end')));
+        if (map.has('pack_lead_days')) setPackLeadDays(parseInt(String(map.get('pack_lead_days'))) || 1);
+        if (map.has('delivery_lead_days')) setDeliveryLeadDays(parseInt(String(map.get('delivery_lead_days'))) || 2);
       } catch (e) { /* use defaults */ }
     })();
   }, []);

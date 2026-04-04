@@ -280,6 +280,22 @@ export const api = {
         return wrapList(mock.mockDecantBottles);
       }
     },
+    packaging: async (): Promise<ApiResponse<PackagingStock[]>> => {
+      try {
+        const rows = await apiGet<any[]>('/inventory/packaging');
+        return wrapOne(rows);
+      } catch (e) {
+        return wrapOne([]);
+      }
+    },
+  },
+  capsules: {
+    stats: async () => wrapOne({ totalDrops: 0, liveDrops: 0, totalSold: 0, totalRevenue: 0, sellThrough: 0 }),
+    listDrops: async () => wrapList([]),
+  },
+  emVault: {
+    stats: async () => wrapOne({ totalReleases: 0, liveReleases: 0, totalSold: 0, totalRevenue: 0, totalRequests: 0 }),
+    listReleases: async () => wrapList([]),
   },
   orders: {
     list: async (): Promise<ApiListResponse<Order>> => {
@@ -520,6 +536,10 @@ export const api = {
       unlinkSupplier: async (skuId: string, supplierId: string) => {
         return apiDelete(`/packaging-sku-suppliers?skuId=${encodeURIComponent(skuId)}&supplierId=${encodeURIComponent(supplierId)}`);
       }
+    },
+    packagingStock: {
+      upsert: (data: any) => apiPost('/inventory/packaging/upsert', data),
+      bulkUpsert: (data: any[]) => apiPost('/inventory/packaging/bulk-upsert', data),
     },
     taxonomies: {
       auras: {

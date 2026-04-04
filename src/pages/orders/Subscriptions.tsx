@@ -82,10 +82,10 @@ export default function Subscriptions() {
   useEffect(() => {
     (async () => {
       try {
-        const settings = await api.settings.list();
-        const map = new Map((settings as any[]).map((s: any) => [s.key, s.value]));
-        if (map.has('cycle_cutoff_days')) setCycleDays(map.get('cycle_cutoff_days')!);
-        if (map.has('cycle_delivery_lead_days')) setCycleDeliveryLead(parseInt(map.get('cycle_delivery_lead_days')!) || 7);
+        const res = await api.settings.list();
+        const map = new Map(res.data.map((s: any) => [s.key, s.value]));
+        if (map.has('cycle_cutoff_days')) setCycleDays(String(map.get('cycle_cutoff_days')));
+        if (map.has('cycle_delivery_lead_days')) setCycleDeliveryLead(parseInt(String(map.get('cycle_delivery_lead_days'))) || 7);
       } catch (e) { /* use defaults */ }
     })();
   }, []);

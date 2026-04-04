@@ -135,8 +135,7 @@ export default function PackagingInventory() {
   const { data: skusRes, refetch: refetchSkus } = useApiQuery(() => api.master.packagingSKUs(), []);
   const { data: stockRes, refetch: refetchStock } = useApiQuery(() => api.inventory.packaging(), []);
   const skus = (skusRes || []) as PackagingSKU[];
-  const stockData = stockRes as { data: PackagingStock[] } | undefined;
-  const stock = (stockData?.data || []) as PackagingStock[];
+  const stock = (stockRes || []) as PackagingStock[];
 
   const stockMap = useMemo(() => {
     const m = new Map<string, PackagingStock>();

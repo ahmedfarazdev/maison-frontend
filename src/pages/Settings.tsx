@@ -100,16 +100,16 @@ function OperationsSettings() {
   useEffect(() => {
     (async () => {
       try {
-        const settings = await api.settings.list();
-        const map = new Map(settings.map((s: any) => [s.key, s.value]));
-        if (map.has('cutoff_start')) setCutoffStart(map.get('cutoff_start')!);
-        if (map.has('cutoff_end')) setCutoffEnd(map.get('cutoff_end')!);
-        if (map.has('pack_lead_days')) setPackLeadDays(map.get('pack_lead_days')!);
-        if (map.has('delivery_lead_days')) setDeliveryLeadDays(map.get('delivery_lead_days')!);
-        if (map.has('cycle_cutoff_days')) setCycleDays(map.get('cycle_cutoff_days')!);
-        if (map.has('cycle_delivery_lead_days')) setCycleDeliveryLeadDays(map.get('cycle_delivery_lead_days')!);
-        if (map.has('cycles_per_month')) setCyclesPerMonth(map.get('cycles_per_month')!);
-        if (map.has('cycle_processing_days')) setCycleProcessingDays(map.get('cycle_processing_days')!);
+        const res = await api.settings.list();
+        const map = new Map(res.data.map((s: any) => [s.key, s.value]));
+        if (map.has('cutoff_start')) setCutoffStart(String(map.get('cutoff_start')));
+        if (map.has('cutoff_end')) setCutoffEnd(String(map.get('cutoff_end')));
+        if (map.has('pack_lead_days')) setPackLeadDays(String(map.get('pack_lead_days')));
+        if (map.has('delivery_lead_days')) setDeliveryLeadDays(String(map.get('delivery_lead_days')));
+        if (map.has('cycle_cutoff_days')) setCycleDays(String(map.get('cycle_cutoff_days')));
+        if (map.has('cycle_delivery_lead_days')) setCycleDeliveryLeadDays(String(map.get('cycle_delivery_lead_days')));
+        if (map.has('cycles_per_month')) setCyclesPerMonth(String(map.get('cycles_per_month')));
+        if (map.has('cycle_processing_days')) setCycleProcessingDays(String(map.get('cycle_processing_days')));
       } catch (e) {
         console.warn('Failed to load settings', e);
       } finally {
@@ -1221,7 +1221,7 @@ function SubscriptionPricingSettings() {
     (async () => {
       try {
         const res = await api.settings.list();
-        const s = Object.fromEntries(res.map((r: any) => [r.key, r.value]));
+        const s = Object.fromEntries(res.data.map((r: any) => [r.key, r.value]));
         if (s.sub_base_price) setBasePrice(s.sub_base_price);
         if (s.sub_extra_vial_price) setExtraVialPrice(s.sub_extra_vial_price);
         if (s.sub_min_vials) setMinVials(s.sub_min_vials);
@@ -1512,7 +1512,7 @@ function GeneralSettings() {
 
 type TeamUser = {
   id: string;
-  name: string;
+  fullName: string;
   email: string;
   role: string;
   active: boolean;
@@ -1563,16 +1563,16 @@ const ASSIGNABLE_ROLES = ['admin', 'system_architect', 'inventory_admin', 'qc', 
 
 function UsersSettings() {
   const [users, setUsers] = useState<TeamUser[]>([
-    { id: 'u1', name: 'Karim Morcos', email: 'karim@maisonem.com', role: 'owner', active: true, lastLogin: '2026-02-14 09:15', joinedAt: '2025-01-01' },
-    { id: 'u2', name: 'Ops Manager', email: 'ops@maisonem.com', role: 'admin', active: true, lastLogin: '2026-02-14 08:30', joinedAt: '2025-01-15' },
-    { id: 'u3', name: 'Ahmed K.', email: 'ahmed@maisonem.com', role: 'system_architect', active: true, lastLogin: '2026-02-13 17:00', joinedAt: '2025-02-01' },
-    { id: 'u4', name: 'Sara M.', email: 'sara@maisonem.com', role: 'inventory_admin', active: true, lastLogin: '2026-02-14 07:45', joinedAt: '2025-03-01' },
-    { id: 'u5', name: 'Layla B.', email: 'layla@maisonem.com', role: 'vault_guardian', active: true, lastLogin: '2026-02-14 10:00', joinedAt: '2025-02-15' },
-    { id: 'u6', name: 'Khalid R.', email: 'khalid@maisonem.com', role: 'pod_junior', active: true, lastLogin: '2026-02-13 16:30', joinedAt: '2025-04-01' },
-    { id: 'u9', name: 'Fatima A.', email: 'fatima@maisonem.com', role: 'pod_senior', active: true, lastLogin: '2026-02-14 11:00', joinedAt: '2025-03-15' },
-    { id: 'u10', name: 'Nadia H.', email: 'nadia@maisonem.com', role: 'pod_leader', active: true, lastLogin: '2026-02-14 08:00', joinedAt: '2025-02-01' },
-    { id: 'u7', name: 'QC Inspector', email: 'qc@maisonem.com', role: 'qc', active: false, lastLogin: '2026-02-10 14:00', joinedAt: '2025-05-01' },
-    { id: 'u8', name: 'Board Viewer', email: 'viewer@maisonem.com', role: 'viewer', active: true, lastLogin: '2026-02-12 11:00', joinedAt: '2025-06-01' },
+    { id: 'u1', fullName: 'Karim Morcos', email: 'karim@maisonem.com', role: 'owner', active: true, lastLogin: '2026-02-14 09:15', joinedAt: '2025-01-01' },
+    { id: 'u2', fullName: 'Ops Manager', email: 'ops@maisonem.com', role: 'admin', active: true, lastLogin: '2026-02-14 08:30', joinedAt: '2025-01-15' },
+    { id: 'u3', fullName: 'Ahmed K.', email: 'ahmed@maisonem.com', role: 'system_architect', active: true, lastLogin: '2026-02-13 17:00', joinedAt: '2025-02-01' },
+    { id: 'u4', fullName: 'Sara M.', email: 'sara@maisonem.com', role: 'inventory_admin', active: true, lastLogin: '2026-02-14 07:45', joinedAt: '2025-03-01' },
+    { id: 'u5', fullName: 'Layla B.', email: 'layla@maisonem.com', role: 'vault_guardian', active: true, lastLogin: '2026-02-14 10:00', joinedAt: '2025-02-15' },
+    { id: 'u6', fullName: 'Khalid R.', email: 'khalid@maisonem.com', role: 'pod_junior', active: true, lastLogin: '2026-02-13 16:30', joinedAt: '2025-04-01' },
+    { id: 'u9', fullName: 'Fatima A.', email: 'fatima@maisonem.com', role: 'pod_senior', active: true, lastLogin: '2026-02-14 11:00', joinedAt: '2025-03-15' },
+    { id: 'u10', fullName: 'Nadia H.', email: 'nadia@maisonem.com', role: 'pod_leader', active: true, lastLogin: '2026-02-14 08:00', joinedAt: '2025-02-01' },
+    { id: 'u7', fullName: 'QC Inspector', email: 'qc@maisonem.com', role: 'qc', active: false, lastLogin: '2026-02-10 14:00', joinedAt: '2025-05-01' },
+    { id: 'u8', fullName: 'Board Viewer', email: 'viewer@maisonem.com', role: 'viewer', active: true, lastLogin: '2026-02-12 11:00', joinedAt: '2025-06-01' },
   ]);
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [editRole, setEditRole] = useState('');
@@ -1598,7 +1598,7 @@ function UsersSettings() {
     if (!inviteName || !inviteEmail) { toast.error('Name and email required'); return; }
     const newUser: TeamUser = {
       id: `u${Date.now()}`,
-      name: inviteName,
+      fullName: inviteName,
       email: inviteEmail,
       role: inviteRole,
       active: true,
@@ -1692,9 +1692,9 @@ function UsersSettings() {
                 <td className="px-3 py-2.5">
                   <div className="flex items-center gap-2.5">
                     <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gold/30 to-gold/10 flex items-center justify-center text-[10px] font-bold text-gold">
-                      {u.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                      {u.fullName.split(' ').map(n => n[0]).join('').slice(0, 2)}
                     </div>
-                    <span className="text-sm font-medium">{u.name}</span>
+                    <span className="text-sm font-medium">{u.fullName}</span>
                   </div>
                 </td>
                 <td className="px-3 py-2.5 text-sm text-muted-foreground">{u.email}</td>

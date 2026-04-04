@@ -33,16 +33,16 @@ export default function OperationalDefaults() {
   useEffect(() => {
     (async () => {
       try {
-        const settings = await api.settings.list();
-        const map = new Map(settings.map((s: any) => [s.key, s.value]));
-        if (map.has('default_vial_size')) setDefaultVialSize(map.get('default_vial_size')!);
-        if (map.has('default_syringe_size')) setDefaultSyringeSize(map.get('default_syringe_size')!);
-        if (map.has('wastage_allowance')) setWastageAllowance(map.get('wastage_allowance')!);
-        if (map.has('default_box_type')) setDefaultBoxType(map.get('default_box_type')!);
+        const res = await api.settings.list();
+        const map = new Map(res.data.map((s: any) => [s.key, s.value]));
+        if (map.has('default_vial_size')) setDefaultVialSize(String(map.get('default_vial_size')));
+        if (map.has('default_syringe_size')) setDefaultSyringeSize(String(map.get('default_syringe_size')));
+        if (map.has('wastage_allowance')) setWastageAllowance(String(map.get('wastage_allowance')));
+        if (map.has('default_box_type')) setDefaultBoxType(String(map.get('default_box_type')));
         if (map.has('include_info_card')) setIncludeInfoCard(map.get('include_info_card') === 'true');
         if (map.has('include_sample_vial')) setIncludeSampleVial(map.get('include_sample_vial') === 'true');
-        if (map.has('default_shipping_company')) setDefaultShippingCompany(map.get('default_shipping_company')!);
-        if (map.has('default_shipping_method')) setDefaultShippingMethod(map.get('default_shipping_method')!);
+        if (map.has('default_shipping_company')) setDefaultShippingCompany(String(map.get('default_shipping_company')));
+        if (map.has('default_shipping_method')) setDefaultShippingMethod(String(map.get('default_shipping_method')));
         if (map.has('auto_generate_label')) setAutoGenerateLabel(map.get('auto_generate_label') === 'true');
       } catch (e) {
         console.warn('Failed to load settings', e);

@@ -22,8 +22,8 @@ export default function SellThroughReport() {
   const loading = capsuleLoading || vaultLoading || dropsLoading || releasesLoading;
   const cs = capsuleStats ?? { totalDrops: 0, liveDrops: 0, totalSold: 0, totalRevenue: 0, sellThrough: 0 };
   const vs = vaultStats ?? { totalReleases: 0, liveReleases: 0, totalSold: 0, totalRevenue: 0, totalRequests: 0 };
-  const drops = (capsuleDrops as any)?.data ?? [];
-  const releases = (vaultReleases as any)?.data ?? [];
+  const drops = capsuleDrops ?? [];
+  const releases = vaultReleases ?? [];
 
   const combinedRevenue = (cs.totalRevenue ?? 0) + (vs.totalRevenue ?? 0);
   const combinedSold = (cs.totalSold ?? 0) + (vs.totalSold ?? 0);
