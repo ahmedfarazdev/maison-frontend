@@ -177,307 +177,342 @@ export const api = {
       }
     },
   },
+
+  // ---- Master Data (Root & Nested) ----
   master: {
+    perfumes: async () => {
+      try {
+        const res = await apiGet<any>('/perfumes');
+        const items = Array.isArray(res) ? res : res.data || [];
+        return wrapList(items.map(mapPerfume));
+      } catch {
+        return wrapList(mock.mockPerfumes);
+      }
+    },
     notes: {
-      post: async (payload: any) => apiPost<any>('/notes', payload),
       list: async () => {
         try {
-          const res = await apiGet<ApiListResponse<any>>('/notes');
-          return res;
+          const res = await apiGet<any>('/notes');
+          return Array.isArray(res) ? wrapList(res) : res;
         } catch {
           return wrapList([]);
         }
       },
+      create: async (d: any) => apiPost('/notes', d),
+      update: async (id: string, d: any) => apiPut(`/notes/${id}`, d),
+      delete: async (id: string) => apiDelete(`/notes/${id}`),
     },
-    notesPerfumes: async () => wrapList([]),
-    perfumes: async (): Promise<ApiListResponse<Perfume>> => {
-      try {
-        const response = await apiGet<any>('/perfumes');
-        // The API returns { data: [...] } due to the standard response wrapper
-        const items = Array.isArray(response) ? response : response.data || [];
-        return wrapList(items.map(mapPerfume));
-      } catch (e) {
-        console.warn('[API] /perfumes fallback to mock', e);
-        return wrapList(mock.mockPerfumes);
-      }
-    },
-    brands: async () => {
-      try {
-        const rows = await apiGet<any[]>('/brands');
-        return wrapList(rows.map(mapBrand));
-      } catch (e) {
-        return wrapList([]);
-      }
-    },
-    auras: Object.assign(async () => {
-      try {
-        const rows = await apiGet<any[]>('/master-data/auras');
-        return wrapList(rows);
-      } catch (e) {
-        return wrapList(mock.mockAuras);
-      }
-    }, {
+    auras: {
       list: async () => wrapList([]),
       create: async (d: any) => wrapOne(d),
-      delete: async (id: string) => wrapOne({ id }),
-    }),
-    filterTags: Object.assign(async () => wrapList([]), {
-      list: async () => wrapList([]),
-      create: async (d: any) => wrapOne(d),
-    }),
-    families: async () => {
-      try {
-        const rows = await apiGet<any[]>('/master-data/families');
-        return wrapList(rows);
-      } catch (e) {
-        return wrapList(mock.mockFamilies);
-      }
-    },
-    subFamilies: async () => {
-      try {
-        const rows = await apiGet<any[]>('/master-data/sub-families');
-        return wrapList(rows);
-      } catch (e) {
-        return wrapList(mock.mockSubFamilies);
-      }
-    },
-    locations: async (): Promise<ApiListResponse<VaultLocation>> => {
-      try {
-        const rows = await apiGet<any[]>('/inventory/locations');
-        return wrapList(rows.map(mapVaultLocation));
-      } catch (e) {
-          return wrapList([]);
-      }
-    },
-    suppliers: async (): Promise<ApiListResponse<Supplier>> => {
-      try {
-        const rows = await apiGet<any[]>('/suppliers');
-        return wrapList(rows.map((row) => mapSupplier(row)));
-      } catch (e) {
-        return wrapList(mock.mockSuppliers);
-      }
-    },
-    syringes: async (): Promise<ApiListResponse<Syringe>> => {
-      try {
-        const rows = await apiGet<any[]>('/syringes');
-        return wrapList(rows.map(mapSyringe));
-      } catch (e) {
-        return wrapList(mock.mockSyringes);
-      }
-    },
-    packagingSKUs: async (): Promise<ApiListResponse<PackagingSKU>> => {
-      const rows = await apiGet<any[]>('/packaging-skus/list');
-      return wrapList(rows.map(mapPackagingSku));
-    },
-    pricingRules: {
-      list: async () => wrapList([]),
-    },
-    pricing: {
-      list: async () => wrapList([]),
       update: async (id: string, d: any) => wrapOne(d),
-      create: async (d: any) => wrapOne(d),
       delete: async (id: string) => wrapOne({ id }),
     },
-    supplierBrands: {
-      list: async () => wrapList([]),
-    },
-  },
-  inventory: {
-    sealedBottles: async (): Promise<ApiListResponse<SealedBottle>> => {
-      try {
-        const rows = await apiGet<any[]>('/inventory/bottles');
-        return wrapList(rows.map(mapInventoryBottle));
-      } catch (e) {
-        return wrapList(mock.mockSealedBottles);
-      }
-    },
-    decantBottles: async (): Promise<ApiListResponse<DecantBottle>> => {
-      try {
-        const rows = await apiGet<any[]>('/inventory/decant-bottles');
-        return wrapList(rows.map(mapDecantBottle));
-      } catch (e) {
-        return wrapList(mock.mockDecantBottles);
-      }
-    },
-    packaging: async (): Promise<ApiResponse<PackagingStock[]>> => {
-      try {
-        const rows = await apiGet<any[]>('/inventory/packaging');
-        return wrapOne(rows);
-      } catch (e) {
-        return wrapOne([]);
-      }
-    },
-    reconciliation: {
+    families: {
       list: async () => wrapList([]),
       create: async (d: any) => wrapOne(d),
-      stats: async () => wrapOne({}),
+      update: async (id: string, d: any) => wrapOne(d),
+      delete: async (id: string) => wrapOne({ id }),
     },
-    alerts: {
+    subFamilies: {
+      list: async () => wrapList([]),
+      create: async (d: any) => wrapOne(d),
+      update: async (id: string, d: any) => wrapOne(d),
+      delete: async (id: string) => wrapOne({ id }),
+    },
+    locations: {
+      list: async () => wrapList([]),
+    },
+    suppliers: {
       list: async () => wrapList([]),
     },
     syringes: {
       list: async () => wrapList([]),
     },
+    pricing: {
+      list: async () => wrapList([]),
+    },
+    supplierBrands: {
+      list: async () => wrapList([]),
+    },
+    filterTags: {
+      list: async () => wrapList([]),
+    }
   },
-  potm: {
+
+  // Aliases for components expecting root-level access
+  notes: {
+    list: async () => {
+      try {
+        const res = await apiGet<any>('/notes');
+        const items = Array.isArray(res) ? res : res.data || [];
+        return wrapList(items);
+      } catch {
+        return wrapList([]);
+      }
+    },
+    create: async (d: any) => apiPost('/notes', d),
+    update: async (id: string, d: any) => apiPut(`/notes/${id}`, d),
+    delete: async (id: string) => apiDelete(`/notes/${id}`),
+    perfumeCounts: async () => wrapOne({}),
+    perfumesByNote: async (name: string) => wrapList([]),
+    bulkImport: async (d: any) => wrapOne({ imported: 0 }),
+  },
+  auras: {
     list: async () => wrapList([]),
     create: async (d: any) => wrapOne(d),
     update: async (id: string, d: any) => wrapOne(d),
     delete: async (id: string) => wrapOne({ id }),
   },
-  capsules: {
-    stats: async () => wrapOne({ totalDrops: 0, liveDrops: 0, totalSold: 0, totalRevenue: 0, sellThrough: 0 }),
-    listDrops: async () => wrapList([]),
-    createDrop: async (d: any) => wrapOne(d),
-    deleteDrop: async (id: string) => wrapOne({ id }),
-    updateDrop: async (id: string, d: any) => wrapOne(d),
-    addItem: async (id: string, d: any) => wrapOne(d),
-    removeItem: async (id: string, itemId: string) => wrapOne({ id, itemId }),
-  },
-  emVault: {
-    stats: async () => wrapOne({ totalReleases: 0, liveReleases: 0, totalSold: 0, totalRevenue: 0, totalRequests: 0 }),
-    listReleases: async () => wrapList([]),
-    createRelease: async (d: any) => wrapOne(d),
-    deleteRelease: async (id: string) => wrapOne({ id }),
-    updateRelease: async (id: string, d: any) => wrapOne(d),
-    addItem: async (id: string, d: any) => wrapOne(d),
-    removeItem: async (id: string, itemId: string) => wrapOne({ id, itemId }),
-    listAccessRequests: async () => wrapList([]),
-    resolveAccessRequest: async (id: string, d: any) => wrapOne(d),
-  },
-  gifting: {
+  families: {
     list: async () => wrapList([]),
-    stats: async () => wrapOne({}),
-    corporate: async () => wrapList([]),
-    giftCards: async () => wrapList([]),
-    giftSubscriptions: async () => wrapList([]),
+    create: async (d: any) => wrapOne(d),
+    update: async (id: string, d: any) => wrapOne(d),
+    delete: async (id: string) => wrapOne({ id }),
   },
+  subFamilies: {
+    list: async () => wrapList([]),
+    create: async (d: any) => wrapOne(d),
+    update: async (id: string, d: any) => wrapOne(d),
+    delete: async (id: string) => wrapOne({ id }),
+  },
+  locations: {
+    list: async () => wrapList([]),
+    create: async (d: any) => wrapOne(d),
+    update: async (id: string, d: any) => wrapOne(d),
+    delete: async (id: string) => wrapOne({ id }),
+  },
+  suppliers: {
+    list: async () => wrapList([]),
+    get: async (id: string) => wrapOne({ id }),
+    create: async (d: any) => wrapOne(d),
+    update: async (id: string, d: any) => wrapOne(d),
+    delete: async (id: string) => wrapOne({ id }),
+  },
+  syringes: {
+    list: async () => wrapList([]),
+    create: async (d: any) => wrapOne(d),
+    update: async (id: string, d: any) => wrapOne(d),
+    delete: async (id: string) => wrapOne({ id }),
+  },
+  pricing: {
+    list: async () => wrapList([]),
+    update: async (id: string, d: any) => wrapOne(d),
+  },
+  filterTags: {
+    list: async () => wrapList([]),
+    create: async (d: any) => wrapOne(d),
+    update: async (id: string, d: any) => wrapOne(d),
+    delete: async (id: string) => wrapOne({ id }),
+  },
+  supplierBrands: {
+    list: async () => wrapList([]),
+    create: async (d: any) => wrapOne(d),
+    delete: async (id: string) => wrapOne({ id }),
+  },
+  brands: {
+    list: async () => wrapList([]),
+    get: async (id: string) => wrapOne({ id }),
+    create: async (d: any) => wrapOne(d),
+    update: async (id: string, d: any) => wrapOne(d),
+  },
+  perfumes: {
+    list: async (params?: any) => {
+      try {
+        const res = await apiGet<any>('/perfumes');
+        const items = Array.isArray(res) ? res : res.data || [];
+        return wrapList(items.map(mapPerfume));
+      } catch {
+        return wrapList(mock.mockPerfumes);
+      }
+    },
+    get: async (id: string) => {
+      const res = await apiGet<any>(`/perfumes/${id}`);
+      return wrapOne(mapPerfume(res));
+    },
+    create: async (d: any) => apiPost('/perfumes', d),
+    update: async (id: string, d: any) => apiPut(`/perfumes/${id}`, d),
+    delete: async (id: string) => apiDelete(`/perfumes/${id}`),
+  },
+
+  // ---- Production & Inventory ----
+  inventory: {
+    bottles: {
+      list: async () => wrapList([]),
+      create: async (d: any) => wrapOne(d),
+      update: async (id: string, d: any) => wrapOne(d),
+      delete: async (id: string) => wrapOne({ id }),
+    },
+    syringes: {
+      list: async () => wrapList([]),
+      create: async (d: any) => wrapOne(d),
+    },
+    packaging: {
+      list: async () => {
+        try {
+          const rows = await apiGet<any[]>('/inventory/packaging');
+          return wrapOne(rows);
+        } catch {
+          return wrapOne([]);
+        }
+      },
+    },
+    decantBottles: {
+      list: async () => wrapList([]),
+      create: async (d: any) => wrapOne(d),
+      update: async (id: string, d: any) => wrapOne(d),
+    },
+    reconciliation: {
+      list: async () => wrapList([]),
+      create: async (d: any) => wrapOne(d),
+      stats: async () => wrapOne({ totalValue: 0, accuracy: 0 }),
+      run: async (id: string) => wrapOne({ id }),
+    },
+    alerts: {
+      list: async () => wrapList([]),
+    }
+  },
+  reconciliation: {
+    list: async () => wrapList([]),
+    create: async (d: any) => wrapOne(d),
+    stats: async () => wrapOne({ totalValue: 0, accuracy: 0 }),
+    run: async (id: string) => wrapOne({ id }),
+  },
+  alerts: {
+    list: async () => wrapList([]),
+  },
+
+  // ---- Procurement ----
   procurement: {
     purchaseOrders: {
       list: async () => wrapList([]),
       nextNumber: async () => wrapOne({ number: 'PO-001' }),
       create: async (d: any) => wrapOne(d),
-      get: async (id: string) => wrapOne({}),
-      updateStatus: async (id: string, s: string) => wrapOne({ id, s }),
+      get: async (id: string) => wrapOne({ id }),
+      updateStatus: async (id: string, s: string) => wrapOne({ id, status: s }),
       confirmDelivery: async (id: string) => wrapOne({ id }),
       attachments: async (id: string) => wrapList([]),
     },
     packagingPOs: {
       list: async () => wrapList([]),
       create: async (d: any) => wrapOne(d),
-      get: async (id: string) => wrapOne({}),
-      updateStatus: async (id: string, s: string) => wrapOne({ id, s }),
+      get: async (id: string) => wrapOne({ id }),
+      updateStatus: async (id: string, s: string) => wrapOne({ id, status: s }),
       confirmDelivery: async (id: string) => wrapOne({ id }),
       cancel: async (id: string) => wrapOne({ id }),
       recordPayment: async (id: string, d: any) => wrapOne(d),
     },
   },
-  orders: {
-    list: async (): Promise<ApiListResponse<Order>> => {
-      try {
-        const rows = await apiGet<any[]>('/orders');
-        return wrapList(rows.map(mapOrder));
-      } catch (e) {
-        return wrapList(mock.mockOrders);
-      }
-    },
+  purchaseOrders: {
+    list: async () => wrapList([]),
+    get: async (id: string) => wrapOne({ id }),
+    create: async (d: any) => wrapOne(d),
+    update: async (id: string, d: any) => wrapOne(d),
+    updateStatus: async (id: string, status: string) => wrapOne({ id, status }),
+    confirmDelivery: async (id: string) => wrapOne({ id }),
+    cancel: async (id: string) => wrapOne({ id }),
+    attachments: async (id: string) => wrapList([]),
+    stats: async () => wrapOne({ totalPOs: 0, pendingValue: 0 }),
+    overduePOs: async () => wrapList([]),
+    nextNumber: async () => Date.now(),
   },
-  jobs: {
-    list: async (): Promise<ApiListResponse<Job>> => {
-      try {
-        const rows = await apiGet<any[]>('/jobs');
-        return wrapList(rows.map(mapJob));
-      } catch (e) {
-        return wrapList(mock.mockJobs);
-      }
-    },
+  packagingPOs: {
+    list: async () => wrapList([]),
+    create: async (d: any) => wrapOne(d),
+    get: async (id: string) => wrapOne({ id }),
+    updateStatus: async (id: string, s: string) => wrapOne({ id, status: s }),
+    confirmDelivery: async (id: string) => wrapOne({ id }),
+    cancel: async (id: string) => wrapOne({ id }),
+    recordPayment: async (id: string, d: any) => wrapOne(d),
   },
-  dashboard: {
-    kpis: async (params?: { from: string; to: string }): Promise<ApiResponse<DashboardKPIs>> => {
-      try {
-        const query = params ? `?from=${params.from}&to=${params.to}` : '';
-        const data = await apiGet<DashboardKPIs>(`/dashboard/kpis${query}`);
-        return wrapOne(data);
-      } catch (e) {
-        return wrapOne(params?.from ? generateKPIsForRange(params.from, params.to) : mock.mockDashboardKPIs);
-      }
-    },
-    alerts: async (params?: { from: string; to: string }): Promise<ApiResponse<InventoryAlert[]>> => {
-      try {
-        const query = params ? `?from=${params.from}&to=${params.to}` : '';
-        const rows = await apiGet<any[]>(`/dashboard/alerts${query}`);
-        return wrapOne(rows.map(mapAlert));
-      } catch (e) {
-        return wrapOne(params?.from ? generateAlertsForRange(params.from, params.to) : mock.mockAlerts);
-      }
-    },
-    recentActivity: async (limit = 10): Promise<ApiListResponse<ActivityEvent>> => {
-      try {
-        const rows = await apiGet<any[]>(`/dashboard/activity?limit=${limit}`);
-        return wrapList(rows);
-      } catch (e) {
-        return wrapList(mock.mockActivity);
-      }
-    },
-    pipeline: async (params?: { from: string; to: string }): Promise<ApiResponse<PipelineStage[]>> => {
-      try {
-        const query = params ? `?from=${params.from}&to=${params.to}` : '';
-        const data = await apiGet<PipelineStage[]>(`/dashboard/pipeline${query}`);
-        return wrapOne(data);
-      } catch (e) {
-        return wrapOne(params?.from ? generatePipelineForRange(params.from, params.to) : []);
-      }
-    },
-    criticalPerfumes: async (params?: { from: string; to: string }): Promise<ApiResponse<CriticalPerfume[]>> => {
-      try {
-        const query = params ? `?from=${params.from}&to=${params.to}` : '';
-        const rows = await apiGet<any[]>(`/dashboard/critical-perfumes${query}`);
-        return wrapOne(rows);
-      } catch (e) {
-        return wrapOne(params?.from ? generateCriticalPerfumesForRange(params.from, params.to) : []);
-      }
-    },
+
+  // ---- Public / Capsules ----
+  capsules: {
+    listDrops: async () => wrapList([]),
+    stats: async () => wrapOne({ totalDrops: 0, liveDrops: 0, totalSold: 0, totalRevenue: 0, sellThrough: 0, remainingAllocation: 0 }),
+    createDrop: async (d: any) => wrapOne(d),
+    updateDrop: async (id: string, d: any) => wrapOne(d),
+    deleteDrop: async (id: string) => wrapOne({ id }),
+    addItem: async (d: any) => wrapOne(d),
+    removeItem: async (id: number) => wrapOne({ id }),
+  },
+  potm: {
+    list: async () => wrapList([]),
+    create: async (d: any) => wrapOne(d),
+    update: async (id: string, d: any) => wrapOne(d),
+    upsert: async (d: any) => wrapOne(d),
+    delete: async (id: string, reason?: string) => wrapOne({ id, reason }),
+  },
+  emVault: {
+    list: async () => wrapList([]),
+    get: async (id: string) => wrapOne({ id }),
+    stats: async () => wrapOne({ totalValue: 0, itemsCount: 0, lowStock: 0 }),
+    listReleases: async () => wrapList([]),
+    createRelease: async (d: any) => wrapOne(d),
+    updateRelease: async (id: string, d: any) => wrapOne(d),
+    deleteRelease: async (id: string) => wrapOne({ id }),
+    addItem: async (id: string, d: any) => wrapOne(d),
+    removeItem: async (id: string, itemId: string) => wrapOne({ id, itemId }),
+  },
+  emVaultAccess: {
+    listRequests: async () => wrapList([]),
+    resolveAccessRequest: async (id: string, payload: any, reason?: string) => wrapOne({ id, ...payload, reason }),
+  },
+
+  // ---- Gifting & Subscriptions ----
+  gifting: {
+    listInquiries: async () => wrapList([]),
+    createInquiry: async (d: any) => wrapOne(d),
+    updateInquiry: async (id: string, d: any) => wrapOne(d),
+    listCards: async () => wrapList([]),
+    createCard: async (d: any) => wrapOne(d),
+    listSets: async () => wrapList([]),
+    createSet: async (d: any) => wrapOne(d),
+    updateSet: async (id: string, d: any) => wrapOne(d),
+    deleteSet: async (id: string) => wrapOne({ id }),
+    listSubscriptions: async () => wrapList([]),
+    createSubscription: async (d: any) => wrapOne(d),
+    stats: async () => wrapOne({ totalInquiries: 0, activeAccounts: 0, totalRevenue: 0 }),
   },
   subscriptions: {
-    cycles: async (): Promise<ApiListResponse<SubscriptionCycle>> => {
-      try {
-        const rows = await apiGet<any[]>('/subscriptions/cycles');
-        return wrapList(rows.map(mapSubscriptionCycle));
-      } catch (e) {
-        return wrapList(mock.mockCycles);
-      }
-    },
-    forecast: async (cycleId: string): Promise<ApiResponse<any>> => {
-      try {
-        const data = await apiGet<any>(`/subscriptions/cycles/${cycleId}/forecast`);
-        return wrapOne(data);
-      } catch (e) {
-        return wrapOne({});
-      }
-    },
+    list: async () => wrapList([]),
+    get: async (id: string) => wrapOne({ id }),
+    update: async (id: string, d: any) => wrapOne(d),
+    cancel: async (id: string) => wrapOne({ id }),
+    cycles: async () => wrapList([]),
+    forecast: async (cycleId: string) => wrapOne({}),
   },
+  subscriptionCycles: {
+    list: async () => wrapList([]),
+    create: async (d: any) => wrapOne(d),
+    generateJobs: async (d: any) => wrapOne(d),
+    update: async (id: string, d: any) => apiPut(`/subscription-cycles/${id}`, d),
+    updateStatus: async (id: string, status: string) => wrapOne({ id, status }),
+  },
+
+  // ---- Stations & Operations ----
   stations: {
-    batchDecantItems: async (): Promise<ApiListResponse<BatchDecantItem>> => {
+    batchDecantItems: async () => {
       try {
         const rows = await apiGet<any[]>('/stations/batch-decant');
         return wrapList(rows);
-      } catch (e) {
+      } catch {
         return wrapList(mock.mockBatchDecantItems);
       }
     },
-    packagingPickProduction: async (): Promise<ApiListResponse<PackagingPickItem>> => {
+    packagingPickProduction: async () => {
       try {
         const rows = await apiGet<any[]>('/stations/packaging-pick/production');
         return wrapList(rows);
-      } catch (e) {
+      } catch {
         return wrapList(mock.mockPackagingPickProduction);
       }
     },
-    packagingPickFulfillment: async (): Promise<ApiListResponse<PackagingPickItem>> => {
+    packagingPickFulfillment: async () => {
       try {
         const rows = await apiGet<any[]>('/stations/packaging-pick/fulfillment');
         return wrapList(rows);
-      } catch (e) {
+      } catch {
         return wrapList(mock.mockPackagingPickFulfillment);
       }
     },
@@ -485,198 +520,163 @@ export const api = {
     syringePickList: () => Promise.resolve(wrapOne(mock.mockSyringePickList)),
     labelQueue: () => Promise.resolve(wrapOne(mock.mockLabelQueue)),
   },
-  settings: {
-    list: async (): Promise<ApiResponse<{ key: string; value: string }[]>> => {
-      try {
-        const data = await apiGet<Record<string, any>>('/settings');
-        const array = Object.entries(data).map(([key, value]) => ({ key, value: String(value) }));
-        return wrapOne(array);
-      } catch (e) {
-        const array = Object.entries(mock.mockSettings).map(([key, value]) => ({ key, value }));
-        return wrapOne(array);
-      }
-    },
-  },
-  customers: {
-    list: async (): Promise<ApiListResponse<any>> => {
-      try {
-        const rows = await apiGet<any[]>('/customers');
-        return wrapList(rows);
-      } catch (e) {
-        return wrapList([]);
-      }
-    },
-  },
-  production: {
-    stats: async (): Promise<ApiResponse<any>> => {
-      try {
-        const data = await apiGet<any>('/production/stats');
-        return wrapOne(data);
-      } catch (e) {
-        return wrapOne({});
-      }
-    },
-  },
-  purchaseOrders: {
-    attachments: async (id: string) => wrapList([]),
-    list: async (): Promise<ApiListResponse<any>> => {
-      try {
-        const rows = await apiGet<any[]>('/purchase-orders');
-        return wrapList(rows);
-      } catch (e) {
-        return wrapList([]);
-      }
-    },
-    stats: async (): Promise<ApiResponse<any>> => {
-      try {
-        const data = await apiGet<any>('/purchase-orders/stats');
-        return wrapOne(data);
-      } catch (e) {
-        return wrapOne({});
-      }
-    },
-    overduePOs: async (): Promise<ApiListResponse<any>> => {
-      try {
-        const rows = await apiGet<any[]>('/purchase-orders/overdue');
-        return wrapList(rows);
-      } catch (e) {
-        return wrapList([]);
-      }
-    },
-    nextNumber: async (): Promise<number> => {
-      try {
-        const res = await apiGet<{ next: number }>('/purchase-orders/next-number');
-        return res.next || Date.now();
-      } catch {
-        return Date.now();
-      }
-    },
-  },
-  mutations: {
-    perfumes: {
-      create: (data: any) => apiPost('/perfumes', data),
-      update: (id: string, data: any) => apiPut(`/perfumes/${id}`, data),
-      delete: (id: string) => apiDelete(`/perfumes/${id}`),
-    },
-    orders: {
-      create: (data: any) => apiPost('/orders', data),
-      update: (id: string, data: any) => apiPut(`/orders/${id}`, data),
-      delete: (id: string) => apiDelete(`/orders/${id}`),
-      bulkUpdateStatus: async (ids: string[], status: string) => wrapOne({ ids, status }),
-      bulkMarkPaid: async (ids: string[]) => wrapOne({ ids }),
-      uploadInvoice: async (orderId: string, file: any) => wrapOne({ orderId }),
-      approveInvoice: async (orderId: string) => wrapOne({ orderId }),
-      receiveBulk: async (orderId: string) => wrapOne({ orderId }),
-      extractInvoicePrices: async (orderId: string) => wrapOne({ orderId }),
-      updateItemPrices: async (orderId: string, items: any[]) => wrapOne({ orderId }),
-      confirmDelivery: async (orderId: string) => wrapOne({ orderId }),
-      addAttachment: async (orderId: string, d: any) => wrapOne({ orderId }),
-      deleteAttachment: async (orderId: string, attachmentId: string) => wrapOne({ orderId, attachmentId }),
-      uploadDocument: async (orderId: string, d: any) => wrapOne({ orderId }),
-      recordPayment: async (orderId: string, d: any) => wrapOne({ orderId }),
-      cancel: async (orderId: string) => wrapOne({ orderId }),
-      setDeliveryDate: async (orderId: string, date: string) => wrapOne({ orderId, date }),
-    },
-    bottles: {
-      create: (data: any) => apiPost('/inventory/bottles', data),
-      update: (id: string, data: any) => apiPut(`/inventory/bottles/${id}`, data),
-    },
-    decantBottles: {
-      create: (data: any) => apiPost('/inventory/decant-bottles', data),
-    },
-    ledger: {
-      createBottleEvent: (data: any) => apiPost('/ledger/bottle-events', data),
-      createDecantEvent: (data: any) => apiPost('/ledger/decant-events', data),
-    },
-    settings: {
-      setBulk: (data: { key: string; value: any; description?: string }[]) => apiPost('/settings/bulk', data),
-    },
-    syringes: {
-      create: (data: any) => apiPost('/syringes', data),
-      update: async (id: string, data: any) => apiPut(`/syringes/${id}`, data),
-      delete: async (id: string) => apiDelete(`/syringes/${id}`),
-    },
-    locations: {
-      create: async (data: any) => apiPost('/inventory/locations', data),
-      update: async (id: string, data: any) => apiPut(`/inventory/locations/${id}`, data),
-      clear: async (id: string) => apiPost(`/inventory/locations/${id}/clear`, {}),
-      delete: async (id: string) => apiDelete(`/inventory/locations/${id}`),
-    },
-    tags: {
-      create: async (data: any) => apiPost('/master-data/filter-tags', data),
-      update: async (id: string, data: any) => apiPut(`/master-data/filter-tags/${id}`, data),
-      delete: async (id: string) => apiDelete(`/master-data/filter-tags/${id}`),
-    },
-    purchaseOrders: {
-      create: async (data: any) => apiPost('/purchase-orders', data),
-      update: async (id: string, data: any) => apiPut(`/purchase-orders/${id}`, data),
-      delete: async (id: string) => apiDelete(`/purchase-orders/${id}`),
-      cancel: async (id: string, reason: string) => apiPost(`/purchase-orders/${id}/cancel`, { reason }),
-      uploadInvoice: async (id: string, file: any) => Promise.resolve(),
-      approveInvoice: async (id: string, payload: any) => Promise.resolve(),
-      receiveBulk: async (id: string, payload: any) => Promise.resolve(),
-    },
-    subscriptionCycles: {
-      update: async (id: string, d: any) => apiPut(`/subscription-cycles/${id}`, d),
-      updateStatus: async (id: string, status: string) => Promise.resolve(),
-    },
-    packagingSkus: {
-      create: (data: any) => apiPost('/packaging-skus', data),
-      bulkCreate: (data: any[]) => apiPost('/packaging-skus/bulk', data),
-      update: async (id: string, data: any) => apiPatch(`/packaging-skus/${encodeURIComponent(id)}`, data),
-      delete: async (id: string) => apiDelete(`/packaging-skus/${encodeURIComponent(id)}`),
-      getSuppliers: async (skuId: string) => {
-        const rows = await apiGet<any[]>(`/packaging-sku-suppliers?skuId=${encodeURIComponent(skuId)}`);
-        return rows || [];
-      },
-      linkSupplier: async (data: { skuId: string, supplierId: string, supplierName?: string, isPreferred?: boolean, lastUnitCost?: string | number }) => {
-        return apiPost('/packaging-sku-suppliers', data);
-      },
-      unlinkSupplier: async (skuId: string, supplierId: string) => {
-        return apiDelete(`/packaging-sku-suppliers?skuId=${encodeURIComponent(skuId)}&supplierId=${encodeURIComponent(supplierId)}`);
-      }
-    },
-    packagingStock: {
-      upsert: (data: any) => apiPost('/inventory/packaging/upsert', data),
-      bulkUpsert: (data: any[]) => apiPost('/inventory/packaging/bulk-upsert', data),
-    },
-    taxonomies: {
-      auras: {
-        create: async (d: any) => apiPost('/master-data/auras', d),
-        update: async (id: string, d: any) => apiPut(`/master-data/auras/${id}`, d),
-        delete: async (id: string) => apiDelete(`/master-data/auras/${id}`),
-      },
-      families: {
-        create: async (d: any) => apiPost('/master-data/families', d),
-        update: async (id: string, d: any) => apiPut(`/master-data/families/${id}`, d),
-        delete: async (id: string) => apiDelete(`/master-data/families/${id}`),
-      },
-      subFamilies: {
-        create: async (d: any) => apiPost('/master-data/sub-families', d),
-        update: async (id: string, d: any) => apiPut(`/master-data/sub-families/${id}`, d),
-        delete: async (id: string) => apiDelete(`/master-data/sub-families/${id}`),
-      },
-    },
-    packagingPOs: {
-      list: () => Promise.resolve(wrapList([])), // Placeholder
-    },
-  },
+
+  // ---- Ledger & History ----
   ledger: {
-    bottle: async (): Promise<ApiListResponse<BottleLedgerEvent>> => {
+    bottle: async () => {
       try {
         const rows = await apiGet<any[]>('/ledger/bottle-events');
         return wrapList(rows.map(mapBottleLedgerEvent));
-      } catch (e) {
+      } catch {
         return wrapList(mock.mockBottleLedger);
       }
     },
-    decant: async (): Promise<ApiListResponse<DecantLedgerEvent>> => {
+    decant: async () => {
       try {
         const rows = await apiGet<any[]>('/ledger/decant-events');
         return wrapList(rows.map(mapDecantLedgerEvent));
-      } catch (e) {
+      } catch {
         return wrapList(mock.mockDecantLedger);
       }
     },
   },
+
+  // ---- Dashboard & Utils ----
+  dashboard: {
+    kpis: async (params?: any) => wrapOne(mock.mockDashboardKPIs),
+    alerts: async (params?: any) => wrapOne(mock.mockAlerts),
+    recentActivity: async (limit = 10) => wrapList(mock.mockActivity),
+    pipeline: async (params?: any) => wrapOne([]),
+    criticalPerfumes: async (params?: any) => wrapOne([]),
+  },
+  settings: {
+    list: async () => wrapOne(Object.entries(mock.mockSettings).map(([key, value]) => ({ key, value }))),
+  },
+  production: {
+    stats: async () => wrapOne({}),
+  },
+  customers: {
+    list: async () => wrapList([]),
+  },
+
+  // ---- Standard UI Patterns ----
+  orders: {
+    list: async () => wrapList([]),
+  },
+  jobs: {
+    list: async () => wrapList([]),
+  },
+
+  // ---- Mutations ----
+  mutations: {
+    perfumes: {
+      create: (d: any) => apiPost('/perfumes', d),
+      update: (id: string, d: any) => apiPut(`/perfumes/${id}`, d),
+      delete: (id: string) => apiDelete(`/perfumes/${id}`),
+      bulkImport: async (d: any) => wrapOne({ imported: 0 }),
+    },
+    purchaseOrders: {
+      create: (d: any) => apiPost('/purchase-orders', d),
+      update: (id: string, d: any) => apiPut(`/purchase-orders/${id}`, d),
+      delete: (id: string) => apiDelete(`/purchase-orders/${id}`),
+      updateStatus: (id: string, status: string) => wrapOne({ id, status }),
+      confirmDelivery: (id: string) => wrapOne({ id }),
+      cancel: (id: string, reason?: string) => wrapOne({ id, reason }),
+      recordPayment: (id: string, d: any) => wrapOne(d),
+      addAttachment: (id: string, d: any) => wrapOne(d),
+      deleteAttachment: (poId: string, attId: string) => wrapOne({ poId, attId }),
+      uploadDocument: (poId: string, d: any) => wrapOne(d),
+      setDeliveryDate: (poId: string, date: string) => wrapOne({ poId, date }),
+      extractInvoicePrices: (poId: string, d: any) => wrapOne(d),
+      updateItemPrices: (poId: string, d: any) => wrapOne(d),
+      bulkUpdateStatus: (d: any) => wrapOne(d),
+      bulkMarkPaid: (d: any) => wrapOne(d),
+    },
+    packagingPOs: {
+      list: async () => wrapList([]),
+      get: async (id: string) => wrapOne({ poId: id, items: [] }),
+      create: (d: any) => apiPost('/procurement/packaging-pos', d),
+      updateStatus: (id: string, status: string) => apiPatch(`/procurement/packaging-pos/${id}/status`, { status }),
+      recordPayment: (id: string, d: any) => apiPost(`/procurement/packaging-pos/${id}/payment`, d),
+      confirmDelivery: (id: string, items: any[]) => apiPost(`/procurement/packaging-pos/${id}/confirm`, { items }),
+      cancel: (id: string, reason: string) => apiPost(`/procurement/packaging-pos/${id}/cancel`, { reason }),
+    },
+    reconciliation: {
+      createSession: async (d: any) => apiPost<any>('/inventory/reconciliation', d),
+      listSessions: async () => wrapList([]),
+      getSession: async (id: string) => wrapOne({ sessionId: id, items: [] }),
+      deleteSession: async (id: string) => apiDelete(`/inventory/reconciliation/${id}`),
+      countItem: async (itemId: number, qty: number, notes?: string) => 
+        apiPost(`/inventory/reconciliation/count`, { itemId, qty, notes }),
+      finalizeSession: async (id: string, applyAdjustments: boolean) => 
+        apiPost(`/inventory/reconciliation/${id}/finalize`, { applyAdjustments }),
+    },
+    orders: {
+      updateStatus: (id: string, status: string) => apiPatch(`/orders/${id}/status`, { status }),
+      addTracking: (id: string, tracking: string) => apiPost(`/orders/${id}/tracking`, { tracking }),
+      addAttachment: (id: string, d: any) => apiPost(`/orders/${id}/attachments`, d),
+      deleteAttachment: (id: string, attrId: string) => apiDelete(`/orders/${id}/attachments/${attrId}`),
+    },
+    bottles: {
+      create: (d: any) => apiPost('/inventory/bottles', d),
+      update: (id: string, d: any) => apiPut(`/inventory/bottles/${id}`, d),
+      delete: (id: string) => apiDelete(`/inventory/bottles/${id}`),
+    },
+    decantBottles: {
+      create: (d: any) => apiPost('/inventory/decant-bottles', d),
+      update: (id: string, d: any) => apiPut(`/inventory/decant-bottles/${id}`, d),
+    },
+    syringes: {
+      create: (d: any) => apiPost('/syringes', d),
+      update: (id: string, d: any) => apiPut(`/syringes/${id}`, d),
+      delete: (id: string) => apiDelete(`/syringes/${id}`),
+    },
+    locations: {
+      create: (d: any) => apiPost('/inventory/locations', d),
+      update: (id: string, d: any) => apiPut(`/inventory/locations/${id}`, d),
+      clear: (id: string) => apiPost(`/inventory/locations/${id}/clear`, {}),
+      delete: (id: string) => apiDelete(`/inventory/locations/${id}`),
+    },
+    tags: {
+      create: (d: any) => apiPost('/master-data/filter-tags', d),
+      update: (id: string, d: any) => apiPut(`/master-data/filter-tags/${id}`, d),
+      delete: (id: string) => apiDelete(`/master-data/filter-tags/${id}`),
+    },
+    taxonomies: {
+      auras: {
+        create: (d: any) => apiPost('/master-data/auras', d),
+        update: (id: string, d: any) => apiPut(`/master-data/auras/${id}`, d),
+        delete: (id: string) => apiDelete(`/master-data/auras/${id}`),
+      },
+      families: {
+        create: (d: any) => apiPost('/master-data/families', d),
+        update: (id: string, d: any) => apiPut(`/master-data/families/${id}`, d),
+        delete: (id: string) => apiDelete(`/Family/${id}`),
+      },
+      subFamilies: {
+        create: (d: any) => apiPost('/master-data/sub-families', d),
+        update: (id: string, d: any) => apiPut(`/master-data/sub-families/${id}`, d),
+        delete: (id: string) => apiDelete(`/master-data/sub-families/${id}`),
+      },
+    },
+    packagingSkus: {
+      create: (d: any) => apiPost('/packaging-skus', d),
+      update: (id: string, d: any) => apiPatch(`/packaging-skus/${encodeURIComponent(id)}`, d),
+      delete: (id: string) => apiDelete(`/packaging-skus/${encodeURIComponent(id)}`),
+      linkSupplier: (d: any) => apiPost('/packaging-sku-suppliers', d),
+      unlinkSupplier: (skuId: string, supplierId: string) => apiDelete(`/packaging-sku-suppliers?skuId=${encodeURIComponent(skuId)}&supplierId=${encodeURIComponent(supplierId)}`),
+    },
+    packagingStock: {
+      upsert: (d: any) => apiPost('/inventory/packaging/upsert', d),
+      bulkUpsert: (d: any[]) => apiPost('/inventory/packaging/bulk-upsert', d),
+    },
+    settings: {
+      setBulk: (d: any[]) => apiPost('/settings/bulk', d),
+    },
+    ledger: {
+      createBottleEvent: (d: any) => apiPost('/ledger/bottle-events', d),
+      createDecantEvent: (d: any) => apiPost('/ledger/decant-events', d),
+    },
+  },
 };
+
