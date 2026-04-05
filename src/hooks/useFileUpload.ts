@@ -3,6 +3,7 @@
 // ============================================================
 
 import { useState, useCallback } from "react";
+import { API_BASE } from "@/lib/api-client";
 
 export interface UploadResult {
   url: string;
@@ -66,7 +67,7 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
 
         setProgress(30);
 
-        const response = await fetch(`/api/upload?folder=${encodeURIComponent(folder)}`, {
+        const response = await fetch(`${API_BASE}/upload?folder=${encodeURIComponent(folder)}`, {
           method: "POST",
           body: formData,
           credentials: "include",
