@@ -25,7 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Initial user check
-    api.auth.me().then(res => {
+    api.auth.meSilent().then(res => {
       setState({
         user: res.data,
         isAuthenticated: !!res.data,

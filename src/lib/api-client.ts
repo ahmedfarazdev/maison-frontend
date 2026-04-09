@@ -148,6 +148,51 @@ async function apiRequest<T>(path: string, options: RequestInit = {}, allowRefre
   return res.json();
 }
 
+async function apiRequestSilent<T>(path: string, options: RequestInit = {}, allowRefresh = true): Promise<T | null> {
+  const headers: Record<string, string> = {
+    ...getAuthHeaders(),
+    ...(options.headers as Record<string, string>),
+  };
+
+  if (options.body && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers,
+  });
+
+  if (res.status === 401 && allowRefresh) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      return apiRequestSilent<T>(path, options, false);
+    }
+
+    clearTokens();
+    return null;
+  }
+
+  if (res.status === 401) {
+    return null;
+  }
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    const message =
+      errorData?.error?.message ||
+      errorData?.message ||
+      `API error: ${res.status}`;
+    throw new Error(message);
+  }
+
+  if (res.status === 204 || res.status === 205) {
+    return {} as T;
+  }
+
+  return res.json();
+}
+
 const apiGet = <T>(path: string) => apiRequest<T>(path, { method: 'GET' });
 const apiPost = <T>(path: string, body: unknown) => apiRequest<T>(path, { method: 'POST', body: JSON.stringify(body) });
 const apiPut = <T>(path: string, body: unknown) => apiRequest<T>(path, { method: 'PUT', body: JSON.stringify(body) });
@@ -311,6 +356,11 @@ async function fetchPerfumesForNotes(): Promise<Perfume[]> {
 // ---- Typed API methods ----
 export const api = {
   auth: {
+    meSilent: async () => {
+      const user = await apiRequestSilent<any>('/auth/me', { method: 'GET' });
+      if (!user) return wrapOne<User | null>(null);
+      return wrapOne<User>(mapUserProfile(user));
+    },
     me: async () => {
       const user = await apiGet<any>('/auth/me');
       return wrapOne<User>(mapUserProfile(user));
