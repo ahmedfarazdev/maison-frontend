@@ -7,27 +7,74 @@
 import { useState, useCallback, useEffect } from 'react';
 import { PageHeader, SectionCard, StatusBadge } from '@/components/shared';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { useTaxonomies } from '@/hooks/useTaxonomies';
 import { useTags } from '@/hooks/useTags';
 import { useLocations } from '@/hooks/useLocations';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Loader2 } from 'lucide-react';
 import { api } from '@/lib/api-client';
 import { mockFilterConfig } from '@/lib/mock-data';
-import {
-  Plus, Edit, ChevronDown, ChevronRight, Layers, Tag, MapPin, Users,
-  Pipette, PackageOpen, Sparkles, Leaf, Music, Flame, Droplets, Heart,
-  Eye, Sun, Moon, Wind, Zap, TreePine, Flower2, Save, X, Trash2, Check,
-  DollarSign, Percent, TrendingUp, BarChart3, Lock,
-} from 'lucide-react';
-import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import {
+  BarChart3,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  DollarSign,
+  Droplets,
+  Edit,
+  Eye,
+  Flame,
+  Flower2,
+  Heart,
+  Layers,
+  Leaf,
+  Loader2,
+  Lock,
+  MapPin,
+  Moon,
+  Music,
+  PackageOpen,
+  Percent,
+  Pipette,
+  Plus,
+  Save,
+  Sparkles,
+  Sun,
+  Tag,
+  Trash2,
+  TreePine,
+  TrendingUp,
+  Users,
+  Wind,
+  X,
+  Zap,
+} from 'lucide-react';
 import type {
-  AuraDefinition, Family, SubFamily, VaultLocation, Supplier, Syringe,
-  PackagingSKU, AuraColor, SurchargeTier, SubscriptionHypeMultiplier,
-  MlDiscount, AlaCartePricingMultiplier, PricingRuleSet,
+  AlaCartePricingMultiplier,
+  AuraColor,
+  AuraDefinition,
+  Family,
+  MlDiscount,
+  PackagingSKU,
+  PricingRuleSet,
+  SubFamily,
+  Supplier,
+  SurchargeTier,
+  SubscriptionHypeMultiplier,
+  Syringe,
   TwoMlTier,
+  VaultLocation,
 } from '@/types';
 
 // ---- Color Helpers ----
@@ -48,6 +95,22 @@ const AURA_BORDER: Record<AuraColor, string> = {
   Yellow: 'border-yellow-200 dark:border-yellow-800', Green: 'border-emerald-200 dark:border-emerald-800',
   Blue: 'border-blue-200 dark:border-blue-800', Pink: 'border-pink-200 dark:border-pink-800',
   Violet: 'border-violet-200 dark:border-violet-800',
+};
+
+const makeUniqueId = (name: string, existing: string[]) => {
+  const base = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+  if (!base) return `item-${Date.now()}`;
+  let candidate = base;
+  let i = 2;
+  while (existing.includes(candidate)) {
+    candidate = `${base}-${i}`;
+    i += 1;
+  }
+  return candidate;
 };
 
 // ---- Shared Inline Edit Input ----
@@ -72,12 +135,22 @@ function InlineTextarea({ value, onChange, className, rows = 2 }: {
 // ---- Aura Definitions (Editable) ----
 export function AuraDefinitions() {
   const { aurasQuery, createAura, updateAura, deleteAura } = useTaxonomies();
+  const [localAuras, setLocalAuras] = useState<AuraDefinition[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<AuraDefinition>>({});
 
-  const allAuras = (aurasQuery.data || []) as AuraDefinition[];
-  const isPending = createAura.isPending || updateAura.isPending || deleteAura.isPending;
+  useEffect(() => {
+    if (aurasQuery.data) setLocalAuras(aurasQuery.data as AuraDefinition[]);
+  }, [aurasQuery.data]);
+
+  const allAuras = localAuras.length ? localAuras : (aurasQuery.data as AuraDefinition[] || []);
+  const isLoading = aurasQuery.isLoading;
+  const hasError = Boolean(aurasQuery.error);
+  const isPending =
+    createAura.isPending ||
+    updateAura.isPending ||
+    deleteAura.isPending;
 
   const startEdit = (a: AuraDefinition) => {
     setEditingId(a.aura_id);
@@ -85,37 +158,14 @@ export function AuraDefinitions() {
     setExpanded(a.aura_id);
   };
 
-  const saveEdit = () => {
-    if (!editingId || !editForm) return;
-
-    const payload = {
-      name: editForm.name || 'New Aura',
-      color: editForm.color || 'Red',
-      colorHex: editForm.color_hex || '#888888',
-      element: editForm.element || '',
-      keywords: Array.isArray(editForm.keywords) ? editForm.keywords : typeof editForm.keywords === 'string' ? JSON.parse(editForm.keywords) : [],
-      persona: editForm.persona || '',
-      tagline: editForm.tagline || '',
-      description: editForm.description || '',
-      coreDrive: editForm.core_drive || '',
-      balanceAura: editForm.balance_aura || '',
-    };
-    
-    const options = {
-      onSuccess: () => {
-        setEditingId(null);
-        setEditForm({});
-      }
-    };
-
-    if (editingId.startsWith('aura-new-')) {
-      createAura.mutate(payload, options);
-    } else {
-      updateAura.mutate({ id: editingId, data: payload }, options);
-    }
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditForm({});
   };
 
-  const cancelEdit = () => { setEditingId(null); setEditForm({}); };
+  const updateField = (field: keyof AuraDefinition, value: unknown) => {
+    setEditForm(prev => ({ ...prev, [field]: value }));
+  };
 
   const addAura = () => {
     const newAura: AuraDefinition = {
@@ -131,11 +181,67 @@ export function AuraDefinitions() {
       core_drive: '',
       balance_aura: '',
     };
+    setLocalAuras([...allAuras, newAura]);
     startEdit(newAura);
   };
 
-  const updateField = (field: keyof AuraDefinition, value: unknown) => {
-    setEditForm(prev => ({ ...prev, [field]: value }));
+  const saveEdit = () => {
+    if (!editingId) return;
+    const current = allAuras.find(a => a.aura_id === editingId);
+    if (!current) return;
+
+    const merged = { ...current, ...editForm } as AuraDefinition;
+    const isNew = !current.id && current.aura_id.startsWith('aura-new-');
+    const auraId = isNew
+      ? makeUniqueId(merged.name || 'aura', allAuras.map(a => a.aura_id))
+      : merged.aura_id;
+    const payload = {
+      aura_id: auraId,
+      name: merged.name || 'New Aura',
+      color: merged.color || 'Red',
+      color_hex: merged.color_hex || '#888888',
+      element: merged.element || '',
+      keywords: merged.keywords || [],
+      persona: merged.persona || '',
+      tagline: merged.tagline || '',
+      description: merged.description || '',
+      core_drive: merged.core_drive || '',
+      balance_aura: merged.balance_aura || '',
+    };
+    const options = {
+      onSuccess: () => {
+        setLocalAuras(prev => prev.map(a => a.aura_id === current.aura_id
+          ? { ...a, ...merged, aura_id: auraId }
+          : a));
+        setEditingId(null);
+        setEditForm({});
+        setExpanded(auraId);
+      },
+    };
+
+    if (isNew) {
+      createAura.mutate(payload, options);
+      return;
+    }
+
+    if (current.id) {
+      updateAura.mutate({ id: current.id, data: payload }, options);
+    }
+  };
+
+  const handleDelete = (target: AuraDefinition) => {
+    if (!target.id) {
+      setLocalAuras(prev => prev.filter(a => a.aura_id !== target.aura_id));
+      setEditingId(null);
+      setEditForm({});
+      return;
+    }
+    deleteAura.mutate(target.id, {
+      onSuccess: () => {
+        setEditingId(null);
+        setEditForm({});
+      },
+    });
   };
 
   return (
@@ -145,190 +251,215 @@ export function AuraDefinitions() {
         subtitle={`${allAuras.length} auras — The 7 Aura Framework`}
         breadcrumbs={[{ label: 'Master Data' }, { label: 'Aura Definitions' }]}
         actions={
-          <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={addAura}>
+          <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5"
+            onClick={addAura}
+            disabled={isPending || isLoading}>
             <Plus className="w-3.5 h-3.5" /> Add Aura
           </Button>
         }
       />
       <div className="p-6">
-        {/* Aura Wheel Overview */}
-        <div className="mb-8">
-          <div className="flex items-center justify-center gap-3 flex-wrap">
-            {allAuras.map(a => (
-              <button key={a.aura_id}
-                onClick={() => setExpanded(expanded === a.aura_id ? null : a.aura_id)}
-                className={`flex items-center gap-2.5 px-4 py-2.5 rounded-full border-2 transition-all duration-200 ${
-                  expanded === a.aura_id ? 'shadow-lg scale-105' : 'hover:shadow-md hover:scale-[1.02]'
-                }`}
-                style={{ borderColor: a.color_hex, backgroundColor: expanded === a.aura_id ? `${a.color_hex}15` : 'transparent' }}>
-                <div className="w-5 h-5 rounded-full" style={{ backgroundColor: a.color_hex }} />
-                <span className="text-sm font-semibold">{a.name}</span>
-                <span className="text-[10px] font-mono text-muted-foreground uppercase">{a.color}</span>
-              </button>
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-20 rounded-xl bg-card/30 animate-pulse" />
             ))}
           </div>
-        </div>
-
-        {/* Aura Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {allAuras.map(a => {
-            const isOpen = expanded === a.aura_id;
-            const isEditing = editingId === a.aura_id;
-            const data = isEditing ? { ...a, ...editForm } as AuraDefinition : a;
-
-            return (
-              <div key={a.aura_id}
-                className={cn(
-                  'bg-card border rounded-xl overflow-hidden transition-all duration-300',
-                  isOpen ? 'ring-2 shadow-lg col-span-1 lg:col-span-2' : 'hover:shadow-md cursor-pointer',
-                  AURA_BORDER[a.color]
-                )}
-                onClick={() => !isEditing && setExpanded(isOpen ? null : a.aura_id)}>
-                {/* Header bar */}
-                <div className="flex items-center gap-4 p-5" style={{ borderBottom: `3px solid ${data.color_hex}` }}>
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: `${data.color_hex}20` }}>
-                    <div className="w-6 h-6 rounded-full" style={{ backgroundColor: data.color_hex }} />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base font-bold">{data.name}</h3>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{data.color}</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground italic mt-0.5">"{data.tagline}"</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {!isEditing && isOpen && (
-                      <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7"
-                        onClick={e => { e.stopPropagation(); startEdit(a); }}>
-                        <Edit className="w-3 h-3" /> Edit
-                      </Button>
-                    )}
-                    <div className="text-muted-foreground">
-                      {isOpen ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Collapsed summary */}
-                {!isOpen && (
-                  <div className="px-5 py-3">
-                    <p className="text-xs text-muted-foreground">{a.persona}</p>
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {(Array.isArray(a.keywords) ? a.keywords : []).map(k => (
-                        <span key={k} className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                          style={{ backgroundColor: `${a.color_hex}15`, color: a.color_hex }}>{k}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Expanded detail (editable) */}
-                {isOpen && (
-                  <div className={cn('p-5 space-y-5', AURA_BG[a.color])} onClick={e => e.stopPropagation()}>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      <div className="space-y-4">
-                        <div>
-                          <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Name</label>
-                          {isEditing ? <InlineInput value={editForm.name || ''} onChange={v => updateField('name', v)} />
-                            : <p className="text-sm mt-1 font-medium">{data.name}</p>}
-                        </div>
-                        <div>
-                          <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Tagline</label>
-                          {isEditing ? <InlineInput value={editForm.tagline || ''} onChange={v => updateField('tagline', v)} />
-                            : <p className="text-sm mt-1 italic">"{data.tagline}"</p>}
-                        </div>
-                        <div>
-                          <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Persona</label>
-                          {isEditing ? <InlineInput value={editForm.persona || ''} onChange={v => updateField('persona', v)} />
-                            : <p className="text-sm mt-1 font-medium">{data.persona}</p>}
-                        </div>
-                        <div>
-                          <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Element</label>
-                          {isEditing ? <InlineInput value={editForm.element || ''} onChange={v => updateField('element', v)} />
-                            : <p className="text-sm mt-1">{data.element}</p>}
-                        </div>
-                        <div>
-                          <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Keywords (comma-separated)</label>
-                          {isEditing ? <InlineInput value={(editForm.keywords || []).join(', ')} onChange={v => updateField('keywords', v.split(',').map(s => s.trim()).filter(Boolean))} />
-                            : <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                {(Array.isArray(data.keywords) ? data.keywords : []).map(k => (
-                                  <span key={k} className="text-xs px-2.5 py-1 rounded-full font-medium border"
-                                    style={{ borderColor: `${data.color_hex}40`, color: data.color_hex }}>{k}</span>
-                                ))}
-                              </div>}
-                        </div>
-                      </div>
-                      <div className="space-y-4">
-                        <div>
-                          <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Description</label>
-                          {isEditing ? <InlineTextarea value={editForm.description || ''} onChange={v => updateField('description', v)} rows={3} />
-                            : <p className="text-sm mt-1 leading-relaxed">{data.description}</p>}
-                        </div>
-                        <div>
-                          <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Core Drive</label>
-                          {isEditing ? <InlineInput value={editForm.core_drive || ''} onChange={v => updateField('core_drive', v)} />
-                            : <p className="text-sm mt-1">{data.core_drive}</p>}
-                        </div>
-                        <div>
-                          <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Balance Aura</label>
-                          {isEditing ? <InlineInput value={editForm.balance_aura || ''} onChange={v => updateField('balance_aura', v)} />
-                            : <p className="text-sm mt-1">{data.balance_aura}</p>}
-                        </div>
-                        <div>
-                          <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Color Hex</label>
-                          {isEditing ? (
-                            <div className="flex items-center gap-2 mt-1">
-                              <input type="color" value={editForm.color_hex || data.color_hex}
-                                onChange={e => updateField('color_hex', e.target.value)}
-                                className="w-8 h-8 rounded border border-border cursor-pointer" />
-                              <InlineInput value={editForm.color_hex || ''} onChange={v => updateField('color_hex', v)} className="max-w-[120px] font-mono" />
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2 mt-1">
-                              <div className="w-5 h-5 rounded border border-border" style={{ backgroundColor: data.color_hex }} />
-                              <span className="text-sm font-mono">{data.color_hex}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    {isEditing && (
-                      <div className="flex justify-end gap-2 pt-2 border-t border-border/50">
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button size="sm" variant="destructive" className="gap-1.5 mr-auto">
-                              <Trash2 className="w-3.5 h-3.5" /> Delete
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete {data.name}?</AlertDialogTitle>
-                              <AlertDialogDescription>This action cannot be undone. This taxonomy might be referenced by several products.</AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => deleteAura.mutate(data.aura_id, { onSuccess: () => { setEditingId(null); } })} className="bg-destructive hover:bg-destructive/90 text-white">
-                                {deleteAura.isPending ? <Loader2 className="w-3 h-3 animate-spin"/> : 'Yes, Delete'}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                        <Button size="sm" variant="outline" onClick={cancelEdit} className="gap-1.5" disabled={isPending}>
-                          <X className="w-3.5 h-3.5" /> Cancel
-                        </Button>
-                        <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveEdit} disabled={isPending}>
-                          {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} 
-                          Save Changes
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
+        ) : hasError ? (
+          <div className="rounded-xl border border-border bg-card/40 p-6 text-sm text-muted-foreground">
+            Unable to load aura definitions right now.
+          </div>
+        ) : allAuras.length === 0 ? (
+          <div className="rounded-xl border border-border bg-card/40 p-6 text-sm text-muted-foreground">
+            No auras yet. Add your first aura to get started.
+          </div>
+        ) : (
+          <>
+            {/* Aura Wheel Overview */}
+            <div className="mb-8">
+              <div className="flex items-center justify-center gap-3 flex-wrap">
+                {allAuras.map(a => (
+                  <button key={a.aura_id}
+                    onClick={() => setExpanded(expanded === a.aura_id ? null : a.aura_id)}
+                    className={`flex items-center gap-2.5 px-4 py-2.5 rounded-full border-2 transition-all duration-200 ${
+                      expanded === a.aura_id ? 'shadow-lg scale-105' : 'hover:shadow-md hover:scale-[1.02]'
+                    }`}
+                    style={{ borderColor: a.color_hex, backgroundColor: expanded === a.aura_id ? `${a.color_hex}15` : 'transparent' }}>
+                    <div className="w-5 h-5 rounded-full" style={{ backgroundColor: a.color_hex }} />
+                    <span className="text-sm font-semibold">{a.name}</span>
+                    <span className="text-[10px] font-mono text-muted-foreground uppercase">{a.color}</span>
+                  </button>
+                ))}
               </div>
-            );
-          })}
-        </div>
+            </div>
+
+            {/* Aura Cards */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {allAuras.map(a => {
+                const isOpen = expanded === a.aura_id;
+                const isEditing = editingId === a.aura_id;
+                const data = isEditing ? { ...a, ...editForm } as AuraDefinition : a;
+
+                return (
+                  <div key={a.aura_id}
+                    className={cn(
+                      'bg-card border rounded-xl overflow-hidden transition-all duration-300',
+                      isOpen ? 'ring-2 shadow-lg col-span-1 lg:col-span-2' : 'hover:shadow-md cursor-pointer',
+                      AURA_BORDER[a.color]
+                    )}
+                    onClick={() => !isEditing && setExpanded(isOpen ? null : a.aura_id)}>
+                    {/* Header bar */}
+                    <div className="flex items-center gap-4 p-5" style={{ borderBottom: `3px solid ${data.color_hex}` }}>
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                        style={{ backgroundColor: `${data.color_hex}20` }}>
+                        <div className="w-6 h-6 rounded-full" style={{ backgroundColor: data.color_hex }} />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-bold">{data.name}</h3>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{data.color}</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground italic mt-0.5">"{data.tagline}"</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {!isEditing && isOpen && (
+                          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7"
+                            onClick={e => { e.stopPropagation(); startEdit(a); }}
+                            disabled={isPending}>
+                            <Edit className="w-3 h-3" /> Edit
+                          </Button>
+                        )}
+                        <div className="text-muted-foreground">
+                          {isOpen ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Collapsed summary */}
+                    {!isOpen && (
+                      <div className="px-5 py-3">
+                        <p className="text-xs text-muted-foreground">{a.persona}</p>
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {(Array.isArray(a.keywords) ? a.keywords : []).map(k => (
+                            <span key={k} className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                              style={{ backgroundColor: `${a.color_hex}15`, color: a.color_hex }}>{k}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Expanded detail (editable) */}
+                    {isOpen && (
+                      <div className={cn('p-5 space-y-5', AURA_BG[a.color])} onClick={e => e.stopPropagation()}>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                          <div className="space-y-4">
+                            <div>
+                              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Name</label>
+                              {isEditing ? <InlineInput value={editForm.name || ''} onChange={v => updateField('name', v)} />
+                                : <p className="text-sm mt-1 font-medium">{data.name}</p>}
+                            </div>
+                            <div>
+                              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Tagline</label>
+                              {isEditing ? <InlineInput value={editForm.tagline || ''} onChange={v => updateField('tagline', v)} />
+                                : <p className="text-sm mt-1 italic">"{data.tagline}"</p>}
+                            </div>
+                            <div>
+                              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Persona</label>
+                              {isEditing ? <InlineInput value={editForm.persona || ''} onChange={v => updateField('persona', v)} />
+                                : <p className="text-sm mt-1 font-medium">{data.persona}</p>}
+                            </div>
+                            <div>
+                              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Element</label>
+                              {isEditing ? <InlineInput value={editForm.element || ''} onChange={v => updateField('element', v)} />
+                                : <p className="text-sm mt-1">{data.element}</p>}
+                            </div>
+                            <div>
+                              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Keywords (comma-separated)</label>
+                              {isEditing ? <InlineInput value={(editForm.keywords || []).join(', ')} onChange={v => updateField('keywords', v.split(',').map(s => s.trim()).filter(Boolean))} />
+                                : <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                    {(Array.isArray(data.keywords) ? data.keywords : []).map(k => (
+                                      <span key={k} className="text-xs px-2.5 py-1 rounded-full font-medium border"
+                                        style={{ borderColor: `${data.color_hex}40`, color: data.color_hex }}>{k}</span>
+                                    ))}
+                                  </div>}
+                            </div>
+                          </div>
+                          <div className="space-y-4">
+                            <div>
+                              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Description</label>
+                              {isEditing ? <InlineTextarea value={editForm.description || ''} onChange={v => updateField('description', v)} rows={3} />
+                                : <p className="text-sm mt-1 leading-relaxed">{data.description}</p>}
+                            </div>
+                            <div>
+                              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Core Drive</label>
+                              {isEditing ? <InlineInput value={editForm.core_drive || ''} onChange={v => updateField('core_drive', v)} />
+                                : <p className="text-sm mt-1">{data.core_drive}</p>}
+                            </div>
+                            <div>
+                              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Balance Aura</label>
+                              {isEditing ? <InlineInput value={editForm.balance_aura || ''} onChange={v => updateField('balance_aura', v)} />
+                                : <p className="text-sm mt-1">{data.balance_aura}</p>}
+                            </div>
+                            <div>
+                              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Color Hex</label>
+                              {isEditing ? (
+                                <div className="flex items-center gap-2 mt-1">
+                                  <input type="color" value={editForm.color_hex || data.color_hex}
+                                    onChange={e => updateField('color_hex', e.target.value)}
+                                    className="w-8 h-8 rounded border border-border cursor-pointer" />
+                                  <InlineInput value={editForm.color_hex || ''} onChange={v => updateField('color_hex', v)} className="max-w-[120px] font-mono" />
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2 mt-1">
+                                  <div className="w-5 h-5 rounded border border-border" style={{ backgroundColor: data.color_hex }} />
+                                  <span className="text-sm font-mono">{data.color_hex}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        {isEditing && (
+                          <div className="flex justify-end gap-2 pt-2 border-t border-border/50">
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button size="sm" variant="destructive" className="gap-1.5 mr-auto" disabled={isPending}>
+                                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete {data.name}?</AlertDialogTitle>
+                                  <AlertDialogDescription>This action cannot be undone. This taxonomy might be referenced by several products.</AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel disabled={deleteAura.isPending}>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => handleDelete(data)}
+                                    className="bg-destructive hover:bg-destructive/90 text-white"
+                                    disabled={deleteAura.isPending}
+                                  >
+                                    {deleteAura.isPending ? <Loader2 className="w-3 h-3 animate-spin"/> : 'Yes, Delete'}
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                            <Button size="sm" variant="outline" onClick={cancelEdit} className="gap-1.5" disabled={isPending}>
+                              <X className="w-3.5 h-3.5" /> Cancel
+                            </Button>
+                            <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveEdit} disabled={isPending}>
+                              {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} 
+                              Save Changes
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -336,13 +467,24 @@ export function AuraDefinitions() {
 
 // ---- Fragrance Families (Editable) ----
 export function FragranceFamilies() {
-  const { familiesQuery, subFamiliesQuery, updateFamily, updateSubFamily } = useTaxonomies();
+  const {
+    familiesQuery,
+    subFamiliesQuery,
+    createFamily,
+    updateFamily,
+    deleteFamily,
+    createSubFamily,
+    updateSubFamily,
+    deleteSubFamily,
+  } = useTaxonomies();
   const [expandedFamily, setExpandedFamily] = useState<string | null>(null);
   const [expandedSub, setExpandedSub] = useState<string | null>(null);
-  const [editingFamily, setEditingFamily] = useState<string | null>(null);
-  const [editingSub, setEditingSub] = useState<string | null>(null);
+  const [editingFamily, setEditingFamily] = useState<Family | null>(null);
+  const [editingSub, setEditingSub] = useState<SubFamily | null>(null);
   const [familyForm, setFamilyForm] = useState<Partial<Family>>({});
   const [subForm, setSubForm] = useState<Partial<SubFamily>>({});
+  const [deleteFamilyTarget, setDeleteFamilyTarget] = useState<Family | null>(null);
+  const [deleteSubTarget, setDeleteSubTarget] = useState<SubFamily | null>(null);
 
   const [localFamilies, setLocalFamilies] = useState<Family[]>([]);
   const [localSubs, setLocalSubs] = useState<SubFamily[]>([]);
@@ -358,6 +500,16 @@ export function FragranceFamilies() {
   const families = localFamilies;
   const subs = localSubs;
 
+  const isLoading = familiesQuery.isLoading || subFamiliesQuery.isLoading;
+  const hasError = Boolean(familiesQuery.error || subFamiliesQuery.error);
+  const isSaving =
+    createFamily.isPending ||
+    updateFamily.isPending ||
+    deleteFamily.isPending ||
+    createSubFamily.isPending ||
+    updateSubFamily.isPending ||
+    deleteSubFamily.isPending;
+
   const FAMILY_ICONS: Record<string, React.ReactNode> = {
     FRESH: <Wind className="w-5 h-5" />, FLORAL: <Flower2 className="w-5 h-5" />,
     ORIENTAL: <Flame className="w-5 h-5" />, WOODY: <TreePine className="w-5 h-5" />,
@@ -368,53 +520,83 @@ export function FragranceFamilies() {
   };
 
   const startEditFamily = (f: Family) => {
-    setEditingFamily(f.main_family_id);
+    setEditingFamily(f);
     setFamilyForm({ ...f });
     setExpandedFamily(f.main_family_id);
   };
 
   const saveFamilyEdit = async () => {
     if (!editingFamily || !familyForm.name) return;
-    try {
-      await updateFamily.mutateAsync({
-        id: editingFamily,
-        data: {
-          name: familyForm.name,
-          tagline: familyForm.tagline,
-          description: familyForm.description,
-          displayOrder: familyForm.display_order
-        }
-      });
-      setEditingFamily(null);
-      toast.success('Family updated');
-    } catch (e) {
-      toast.error('Failed to update family');
+    const isNew = !editingFamily.id && editingFamily.main_family_id.startsWith('fam-new-');
+    const familyId = isNew
+      ? makeUniqueId(familyForm.name, families.map(f => f.main_family_id))
+      : editingFamily.main_family_id;
+    const payload = {
+      main_family_id: familyId,
+      name: familyForm.name,
+      tagline: familyForm.tagline,
+      description: familyForm.description,
+      display_order: familyForm.display_order ?? families.length + 1,
+    };
+    const options = {
+      onSuccess: () => {
+        setEditingFamily(null);
+        setFamilyForm({});
+      },
+    };
+
+    if (isNew) {
+      createFamily.mutate(payload, options);
+      return;
+    }
+
+    if (editingFamily.id) {
+      updateFamily.mutate({ id: editingFamily.id, data: payload }, options);
     }
   };
 
   const startEditSub = (s: SubFamily) => {
-    setEditingSub(s.sub_family_id);
+    setEditingSub(s);
     setSubForm({ ...s });
     setExpandedSub(s.sub_family_id);
   };
 
   const saveSubEdit = async () => {
     if (!editingSub || !subForm.name) return;
-    try {
-      await updateSubFamily.mutateAsync({
-        id: editingSub,
-        data: {
-          mainFamilyId: subForm.main_family_id || '',
-          name: subForm.name,
-          description: subForm.description,
-          prominentNotes: subForm.prominent_notes,
-          displayOrder: subForm.display_order
-        }
-      });
-      setEditingSub(null);
-      toast.success('Sub-family updated');
-    } catch (e) {
-      toast.error('Failed to update sub-family');
+    const isNew = !editingSub.id && editingSub.sub_family_id.startsWith('sub-new-');
+    const subFamilyId = isNew
+      ? makeUniqueId(subForm.name, subs.map(s => s.sub_family_id))
+      : editingSub.sub_family_id;
+    const payload = {
+      sub_family_id: subFamilyId,
+      ff_code: subForm.ff_code || editingSub.ff_code,
+      main_family_id: subForm.main_family_id || editingSub.main_family_id,
+      name: subForm.name,
+      scent_dna: subForm.scent_dna,
+      ritual_name: subForm.ritual_name,
+      ritual_occasions: subForm.ritual_occasions,
+      aura_color: subForm.aura_color,
+      aura_name: subForm.aura_name,
+      key_notes: subForm.key_notes,
+      mood_tags: subForm.mood_tags,
+      description: subForm.description,
+      scent_story: subForm.scent_story,
+    };
+    const options = {
+      onSuccess: () => {
+        setEditingSub(null);
+        setSubForm({});
+      },
+    };
+
+    if (isNew) {
+      createSubFamily.mutate(payload, options);
+      return;
+    }
+
+    if (editingSub.id) {
+      const { sub_family_id: _ignored, ...updatePayload } = payload;
+      updateSubFamily.mutate({ id: editingSub.id, data: updatePayload }, options);
     }
   };
 
@@ -425,7 +607,6 @@ export function FragranceFamilies() {
     };
     setLocalFamilies([...families, newF]);
     startEditFamily(newF);
-    toast.info('New family created');
   };
 
   const addSubFamily = () => {
@@ -438,18 +619,39 @@ export function FragranceFamilies() {
     };
     setLocalSubs([...subs, newS]);
     startEditSub(newS);
-    toast.info('New sub-family created');
   };
 
-  const deleteFamily = (id: string) => {
-    setLocalFamilies(families.filter(f => f.main_family_id !== id));
-    setLocalSubs(subs.filter(s => s.main_family_id !== id));
-    toast.success('Family deleted');
+  const requestDeleteFamily = (family: Family) => {
+    setDeleteFamilyTarget(family);
   };
 
-  const deleteSub = (id: string) => {
-    setLocalSubs(subs.filter(s => s.sub_family_id !== id));
-    toast.success('Sub-family deleted');
+  const requestDeleteSub = (sub: SubFamily) => {
+    setDeleteSubTarget(sub);
+  };
+
+  const confirmDeleteFamily = () => {
+    if (!deleteFamilyTarget) return;
+    if (!deleteFamilyTarget.id) {
+      setLocalFamilies(families.filter(f => f.main_family_id !== deleteFamilyTarget.main_family_id));
+      setLocalSubs(subs.filter(s => s.main_family_id !== deleteFamilyTarget.main_family_id));
+      setDeleteFamilyTarget(null);
+      return;
+    }
+    deleteFamily.mutate(deleteFamilyTarget.id, {
+      onSuccess: () => setDeleteFamilyTarget(null),
+    });
+  };
+
+  const confirmDeleteSub = () => {
+    if (!deleteSubTarget) return;
+    if (!deleteSubTarget.id) {
+      setLocalSubs(subs.filter(s => s.sub_family_id !== deleteSubTarget.sub_family_id));
+      setDeleteSubTarget(null);
+      return;
+    }
+    deleteSubFamily.mutate(deleteSubTarget.id, {
+      onSuccess: () => setDeleteSubTarget(null),
+    });
   };
 
   return (
@@ -460,10 +662,10 @@ export function FragranceFamilies() {
         breadcrumbs={[{ label: 'Master Data' }, { label: 'Fragrance Families' }]}
         actions={
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={addSubFamily}>
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={addSubFamily} disabled={isSaving || isLoading}>
               <Plus className="w-3.5 h-3.5" /> Add Sub-Family
             </Button>
-            <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={addFamily}>
+            <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={addFamily} disabled={isSaving || isLoading}>
               <Plus className="w-3.5 h-3.5" /> Add Family
             </Button>
           </div>
@@ -473,7 +675,7 @@ export function FragranceFamilies() {
         {families.sort((a, b) => a.display_order - b.display_order).map(f => {
           const familySubs = subs.filter(s => s.main_family_id === f.main_family_id);
           const isOpen = expandedFamily === f.main_family_id;
-          const isEditingF = editingFamily === f.main_family_id;
+          const isEditingF = editingFamily?.main_family_id === f.main_family_id;
           const color = FAMILY_COLORS[f.name] || '#888';
 
           return (
@@ -502,7 +704,8 @@ export function FragranceFamilies() {
                         <Edit className="w-3 h-3" /> Edit
                       </Button>
                       <Button size="sm" variant="outline" className="gap-1 text-xs h-7 text-destructive hover:text-destructive"
-                        onClick={e => { e.stopPropagation(); deleteFamily(f.main_family_id); }}>
+                        onClick={e => { e.stopPropagation(); requestDeleteFamily(f); }}
+                        disabled={isSaving}>
                         <Trash2 className="w-3 h-3" />
                       </Button>
                     </>
@@ -533,11 +736,11 @@ export function FragranceFamilies() {
                           <InlineTextarea value={familyForm.description || ''} onChange={v => setFamilyForm(p => ({ ...p, description: v }))} rows={3} />
                         </div>
                         <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => setEditingFamily(null)} className="gap-1.5">
+                          <Button size="sm" variant="outline" onClick={() => setEditingFamily(null)} className="gap-1.5" disabled={isSaving}>
                             <X className="w-3.5 h-3.5" /> Cancel
                           </Button>
-                          <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveFamilyEdit}>
-                            <Save className="w-3.5 h-3.5" /> Save
+                          <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveFamilyEdit} disabled={isSaving}>
+                            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save
                           </Button>
                         </div>
                       </div>
@@ -549,7 +752,7 @@ export function FragranceFamilies() {
                   <div className="divide-y divide-border/50">
                     {familySubs.map(sub => {
                       const subOpen = expandedSub === sub.sub_family_id;
-                      const isEditingS = editingSub === sub.sub_family_id;
+                      const isEditingS = editingSub?.sub_family_id === sub.sub_family_id;
                       const auraHex = AURA_HEX[sub.aura_color] || '#888';
 
                       return (
@@ -575,7 +778,8 @@ export function FragranceFamilies() {
                                     <Edit className="w-2.5 h-2.5" />
                                   </Button>
                                   <Button size="sm" variant="outline" className="gap-1 text-xs h-6 px-2 text-destructive hover:text-destructive"
-                                    onClick={e => { e.stopPropagation(); deleteSub(sub.sub_family_id); }}>
+                                    onClick={e => { e.stopPropagation(); requestDeleteSub(sub); }}
+                                    disabled={isSaving}>
                                     <Trash2 className="w-2.5 h-2.5" />
                                   </Button>
                                 </>
@@ -640,11 +844,11 @@ export function FragranceFamilies() {
                                     <InlineTextarea value={subForm.scent_story || ''} onChange={v => setSubForm(p => ({ ...p, scent_story: v }))} rows={3} />
                                   </div>
                                   <div className="flex justify-end gap-2">
-                                    <Button size="sm" variant="outline" onClick={() => setEditingSub(null)} className="gap-1.5">
+                                    <Button size="sm" variant="outline" onClick={() => setEditingSub(null)} className="gap-1.5" disabled={isSaving}>
                                       <X className="w-3.5 h-3.5" /> Cancel
                                     </Button>
-                                    <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveSubEdit}>
-                                      <Save className="w-3.5 h-3.5" /> Save
+                                    <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveSubEdit} disabled={isSaving}>
+                                      {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save
                                     </Button>
                                   </div>
                                 </div>
@@ -701,6 +905,42 @@ export function FragranceFamilies() {
           );
         })}
       </div>
+      <AlertDialog open={!!deleteFamilyTarget} onOpenChange={(open) => { if (!open && !deleteFamily.isPending) setDeleteFamilyTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleteFamilyTarget?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>This will remove the family and its sub-families. This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteFamily.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteFamily}
+              className="bg-destructive hover:bg-destructive/90 text-white"
+              disabled={deleteFamily.isPending}
+            >
+              {deleteFamily.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes, Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={!!deleteSubTarget} onOpenChange={(open) => { if (!open && !deleteSubFamily.isPending) setDeleteSubTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleteSubTarget?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>This sub-family will be removed from the taxonomy. This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteSubFamily.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteSub}
+              className="bg-destructive hover:bg-destructive/90 text-white"
+              disabled={deleteSubFamily.isPending}
+            >
+              {deleteSubFamily.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes, Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -711,11 +951,14 @@ export function FiltersAndTags() {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Load filter tags from DB on mount
   useEffect(() => {
     (async () => {
       try {
+        setIsLoading(true);
         const res = await api.master.filterTags();
         if (res.data.length > 0) {
           const grouped: Record<string, string[]> = {};
@@ -734,6 +977,8 @@ export function FiltersAndTags() {
         }
       } catch (e) {
         console.warn('[Filters] Failed to load from DB, using defaults', e);
+      } finally {
+        setIsLoading(false);
       }
     })();
   }, []);
@@ -757,7 +1002,7 @@ export function FiltersAndTags() {
   };
 
   const addTag = () => {
-    if (!newTagInput.trim()) return;
+    if (!newTagInput.trim() || isSaving) return;
     setEditValues(prev => [...prev, newTagInput.trim()]);
     setNewTagInput('');
   };
@@ -769,6 +1014,7 @@ export function FiltersAndTags() {
   const saveSection = async () => {
     if (!editingKey) return;
     try {
+      setIsSaving(true);
       // Delete existing tags for this category, then re-create
       const existingRes = await api.master.filterTags(editingKey);
       for (const tag of (existingRes.data as any[])) {
@@ -789,6 +1035,8 @@ export function FiltersAndTags() {
     } catch (e) {
       console.error('[Filters] Save failed:', e);
       toast.error('Failed to save tags');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -800,81 +1048,93 @@ export function FiltersAndTags() {
         breadcrumbs={[{ label: 'Master Data' }, { label: 'Filters & Tags' }]}
       />
       <div className="p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {sections.map(sec => {
-            const isEditing = editingKey === sec.key;
-            const values = isEditing ? editValues : (filters[sec.key] as string[]);
-
-            return (
-              <div key={sec.key} className="bg-card border border-border rounded-xl overflow-hidden">
-                <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border bg-muted/20">
-                  <span className="text-muted-foreground">{sec.icon}</span>
-                  <h3 className="text-sm font-semibold">{sec.title}</h3>
-                  <span className="text-[10px] font-mono text-muted-foreground ml-auto">{values.length} items</span>
-                  {!isEditing ? (
-                    <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => startEditSection(sec.key)}>
-                      <Edit className="w-3 h-3" />
-                    </Button>
-                  ) : (
-                    <div className="flex gap-1">
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingKey(null)}>
-                        <X className="w-3 h-3" />
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-gold" onClick={saveSection}>
-                        <Check className="w-3 h-3" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-                <div className="p-4">
-                  <div className="flex flex-wrap gap-2">
-                    {values.map((v, idx) => {
-                      const tagColor = sec.colorFn?.(v);
-                      return (
-                        <span key={`${v}-${idx}`} className={cn(
-                          'inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-medium border border-border bg-muted/30 transition-colors',
-                          isEditing ? 'pr-1.5' : 'cursor-default'
-                        )}>
-                          {tagColor && <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: tagColor }} />}
-                          {v}
-                          {isEditing && (
-                            <button onClick={() => removeTag(idx)}
-                              className="w-4 h-4 rounded-full bg-destructive/20 text-destructive flex items-center justify-center hover:bg-destructive/40 ml-1">
-                              <X className="w-2.5 h-2.5" />
-                            </button>
-                          )}
-                        </span>
-                      );
-                    })}
-                  </div>
-                  {isEditing && (
-                    <div className="flex items-center gap-2 mt-3">
-                      <input type="text" value={newTagInput} onChange={e => setNewTagInput(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && addTag()}
-                        placeholder="Add new tag..."
-                        className="flex-1 bg-background border border-input rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold/30" />
-                      <Button size="sm" variant="outline" onClick={addTag} className="gap-1 h-8">
-                        <Plus className="w-3 h-3" /> Add
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="mt-8 bg-muted/30 border border-border rounded-xl p-5">
-          <h3 className="text-sm font-semibold mb-3">Tag Coverage Summary</h3>
-          <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-3">
-            {sections.map(sec => (
-              <div key={sec.key} className="text-center">
-                <div className="text-lg font-bold font-mono">{(filters[sec.key] as string[]).length}</div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{sec.title}</div>
-              </div>
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="h-40 rounded-xl bg-card/30 animate-pulse" />
             ))}
           </div>
-        </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+              {sections.map(sec => {
+                const isEditing = editingKey === sec.key;
+                const values = isEditing ? editValues : (filters[sec.key] as string[]);
+
+                return (
+                  <div key={sec.key} className="bg-card border border-border rounded-xl overflow-hidden">
+                    <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border bg-muted/20">
+                      <span className="text-muted-foreground">{sec.icon}</span>
+                      <h3 className="text-sm font-semibold">{sec.title}</h3>
+                      <span className="text-[10px] font-mono text-muted-foreground ml-auto">{values.length} items</span>
+                      {!isEditing ? (
+                        <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => startEditSection(sec.key)}>
+                          <Edit className="w-3 h-3" />
+                        </Button>
+                      ) : (
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingKey(null)} disabled={isSaving}>
+                            <X className="w-3 h-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-gold" onClick={saveSection} disabled={isSaving}>
+                            {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-4">
+                      <div className="flex flex-wrap gap-2">
+                        {values.map((v, idx) => {
+                          const tagColor = sec.colorFn?.(v);
+                          return (
+                            <span key={`${v}-${idx}`} className={cn(
+                              'inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-medium border border-border bg-muted/30 transition-colors',
+                              isEditing ? 'pr-1.5' : 'cursor-default'
+                            )}>
+                              {tagColor && <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: tagColor }} />}
+                              {v}
+                              {isEditing && (
+                                <button onClick={() => removeTag(idx)}
+                                  className="w-4 h-4 rounded-full bg-destructive/20 text-destructive flex items-center justify-center hover:bg-destructive/40 ml-1"
+                                  disabled={isSaving}>
+                                  <X className="w-2.5 h-2.5" />
+                                </button>
+                              )}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      {isEditing && (
+                        <div className="flex items-center gap-2 mt-3">
+                          <input type="text" value={newTagInput} onChange={e => setNewTagInput(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && addTag()}
+                            placeholder="Add new tag..."
+                            className="flex-1 bg-background border border-input rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold/30"
+                            disabled={isSaving} />
+                          <Button size="sm" variant="outline" onClick={addTag} className="gap-1 h-8" disabled={isSaving}>
+                            <Plus className="w-3 h-3" /> Add
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-8 bg-muted/30 border border-border rounded-xl p-5">
+              <h3 className="text-sm font-semibold mb-3">Tag Coverage Summary</h3>
+              <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-3">
+                {sections.map(sec => (
+                  <div key={sec.key} className="text-center">
+                    <div className="text-lg font-bold font-mono">{(filters[sec.key] as string[]).length}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{sec.title}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -969,10 +1229,10 @@ export function PricingRules() {
       if (name === 'Surcharge Tiers') {
         await api.mutations.pricing.saveSurcharges(
           surcharges.map((s, i) => ({
-            fromPricePerMl: String(s.from_price_per_ml),
-            toPricePerMl: s.to_price_per_ml != null ? String(s.to_price_per_ml) : null,
+            fromPricePerMl: s.from_price_per_ml,
+            toPricePerMl: s.to_price_per_ml ?? null,
             sCategory: s.s_category,
-            sPrice: String(s.s_price),
+            sPrice: s.s_price,
             sortOrder: i,
           }))
         );
@@ -980,7 +1240,7 @@ export function PricingRules() {
         await api.mutations.pricing.saveSubHypeMultipliers(
           subHypeMultipliers.map((s, i) => ({
             hype: s.hype,
-            multiplier: String(s.multiplier),
+            multiplier: s.multiplier,
             sortOrder: i,
           }))
         );
@@ -989,7 +1249,7 @@ export function PricingRules() {
           mlDiscounts.map((d, i) => ({
             label: d.label,
             mlSize: d.ml_size,
-            discountFactor: String(d.discount_factor),
+            discountFactor: d.discount_factor,
             sortOrder: i,
           }))
         );
@@ -997,7 +1257,7 @@ export function PricingRules() {
         await api.mutations.pricing.saveAlacarteMultipliers(
           alacarteMultipliers.map((a, i) => ({
             hype: a.hype,
-            multiplier: String(a.multiplier),
+            multiplier: a.multiplier,
             sortOrder: i,
           }))
         );
@@ -1005,7 +1265,7 @@ export function PricingRules() {
         await api.mutations.pricing.save2mlTiers(
           twoMlTiers.map((t, i) => ({
             sCategory: t.s_category,
-            price: String(t.price),
+            price: t.price,
             sortOrder: i,
           }))
         );

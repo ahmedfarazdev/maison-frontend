@@ -6,46 +6,14 @@
 import { useState, useMemo } from 'react';
 import { Calculator, ChevronDown, ChevronUp, Info, TrendingUp, Package } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Perfume, HypeLevel, SurchargeTier, SubscriptionHypeMultiplier, MlDiscount, AlaCartePricingMultiplier } from '@/types';
-
-// Default pricing rules (matching the MasterDataPages defaults)
-const DEFAULT_SURCHARGES: SurchargeTier[] = [
-  { from_price_per_ml: 0, to_price_per_ml: 3, s_category: 'S0', s_price: 0 },
-  { from_price_per_ml: 3, to_price_per_ml: 6, s_category: 'S1', s_price: 25 },
-  { from_price_per_ml: 6, to_price_per_ml: 9, s_category: 'S2', s_price: 50 },
-  { from_price_per_ml: 9, to_price_per_ml: 12, s_category: 'S3', s_price: 75 },
-  { from_price_per_ml: 12, to_price_per_ml: 15, s_category: 'S4', s_price: 100 },
-  { from_price_per_ml: 15, to_price_per_ml: null, s_category: 'S5', s_price: 125 },
-];
-
-const DEFAULT_SUB_HYPE_MULT: SubscriptionHypeMultiplier[] = [
-  { hype: 'Extreme', multiplier: 1.2 },
-  { hype: 'High', multiplier: 1.1 },
-  { hype: 'Medium', multiplier: 1 },
-  { hype: 'Low', multiplier: 1 },
-  { hype: 'Rare', multiplier: 1.4 },
-  { hype: 'Discontinued', multiplier: 1.5 },
-];
-
-const DEFAULT_ML_DISCOUNTS: MlDiscount[] = [
-  { label: 'Premium', ml_size: 1, discount_factor: 0.10 },
-  { label: 'Discount', ml_size: 2, discount_factor: 0 },
-  { label: 'Discount', ml_size: 3, discount_factor: 0.03 },
-  { label: 'Discount', ml_size: 5, discount_factor: 0.05 },
-  { label: 'Discount', ml_size: 8, discount_factor: 0.10 },
-  { label: 'Discount', ml_size: 10, discount_factor: 0.12 },
-  { label: 'Discount', ml_size: 20, discount_factor: 0.15 },
-  { label: 'Discount', ml_size: 30, discount_factor: 0.18 },
-];
-
-const DEFAULT_ALACARTE_MULT: AlaCartePricingMultiplier[] = [
-  { hype: 'Extreme', multiplier: 4 },
-  { hype: 'High', multiplier: 3.75 },
-  { hype: 'Medium', multiplier: 3.5 },
-  { hype: 'Low', multiplier: 3.25 },
-  { hype: 'Rare', multiplier: 5 },
-  { hype: 'Discontinued', multiplier: 5 },
-];
+import type { Perfume, HypeLevel } from '@/types';
+import {
+  DEFAULT_SURCHARGES,
+  DEFAULT_SUB_HYPE_MULT,
+  DEFAULT_ML_DISCOUNTS,
+  DEFAULT_ALACARTE_MULT,
+} from '@/lib/pricing-engine';
+import { usePricingRules } from '@/hooks/usePricingRules';
 
 interface PricingCalculatorProps {
   perfume: Perfume;
@@ -63,32 +31,38 @@ export default function PricingCalculator({ perfume }: PricingCalculatorProps) {
   const [expanded, setExpanded] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
 
+  const { data: pricingRules } = usePricingRules();
+  const surchargeTiers = pricingRules?.surcharges ?? DEFAULT_SURCHARGES;
+  const subHypeMultipliers = pricingRules?.subHypeMultipliers ?? DEFAULT_SUB_HYPE_MULT;
+  const mlDiscounts = pricingRules?.mlDiscounts ?? DEFAULT_ML_DISCOUNTS;
+  const alacarteMultipliers = pricingRules?.alacarteMultipliers ?? DEFAULT_ALACARTE_MULT;
+
   const pricePerMl = perfume.price_per_ml;
   const hype = (perfume.hype_level || 'Medium') as HypeLevel;
 
   // 1. Determine surcharge tier
   const surcharge = useMemo(() => {
-    for (const tier of DEFAULT_SURCHARGES) {
+    for (const tier of surchargeTiers) {
       if (pricePerMl >= tier.from_price_per_ml && (tier.to_price_per_ml === null || pricePerMl < tier.to_price_per_ml)) {
         return tier;
       }
     }
-    return DEFAULT_SURCHARGES[DEFAULT_SURCHARGES.length - 1];
-  }, [pricePerMl]);
+    return surchargeTiers[surchargeTiers.length - 1];
+  }, [pricePerMl, surchargeTiers]);
 
   // 2. Get subscription hype multiplier
   const subHypeMult = useMemo(() => {
-    return DEFAULT_SUB_HYPE_MULT.find(m => m.hype === hype)?.multiplier || 1;
-  }, [hype]);
+    return subHypeMultipliers.find(m => m.hype === hype)?.multiplier || 1;
+  }, [hype, subHypeMultipliers]);
 
   // 3. Get a la carte hype multiplier
   const alacarteHypeMult = useMemo(() => {
-    return DEFAULT_ALACARTE_MULT.find(m => m.hype === hype)?.multiplier || 3.5;
-  }, [hype]);
+    return alacarteMultipliers.find(m => m.hype === hype)?.multiplier || 3.5;
+  }, [hype, alacarteMultipliers]);
 
   // 4. Calculate prices for each ML size
   const calculatedPrices: CalculatedPrice[] = useMemo(() => {
-    return DEFAULT_ML_DISCOUNTS.map(d => {
+    return mlDiscounts.map(d => {
       // Subscription price: (price_per_ml × ml_size × hype_mult) + surcharge - discount
       const baseSubPrice = pricePerMl * d.ml_size * subHypeMult;
       const subWithSurcharge = baseSubPrice + surcharge.s_price;
@@ -107,7 +81,7 @@ export default function PricingCalculator({ perfume }: PricingCalculatorProps) {
         discount_factor: d.discount_factor,
       };
     });
-  }, [pricePerMl, subHypeMult, alacarteHypeMult, surcharge]);
+  }, [pricePerMl, subHypeMult, alacarteHypeMult, surcharge, mlDiscounts]);
 
   return (
     <div className="border-t border-border pt-4">

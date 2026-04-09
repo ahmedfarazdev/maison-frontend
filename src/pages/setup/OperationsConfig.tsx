@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { PageHeader, SectionCard } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api-client';
+import { SETTINGS_KEYS } from '@/lib/settings-keys';
 import { Clock, Save, Loader2, CalendarDays, Truck, Package } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -32,14 +33,14 @@ export default function OperationsConfig() {
       try {
         const settings = await api.settings.list();
         const map = new Map(settings.data.map((s: any) => [s.key, s.value]));
-        if (map.has('cutoff_start')) setCutoffStart(map.get('cutoff_start')!);
-        if (map.has('cutoff_end')) setCutoffEnd(map.get('cutoff_end')!);
-        if (map.has('pack_lead_days')) setPackLeadDays(map.get('pack_lead_days')!);
-        if (map.has('delivery_lead_days')) setDeliveryLeadDays(map.get('delivery_lead_days')!);
-        if (map.has('cycle_cutoff_days')) setCycleDays(map.get('cycle_cutoff_days')!);
-        if (map.has('cycle_delivery_lead_days')) setCycleDeliveryLeadDays(map.get('cycle_delivery_lead_days')!);
-        if (map.has('cycles_per_month')) setCyclesPerMonth(map.get('cycles_per_month')!);
-        if (map.has('cycle_processing_days')) setCycleProcessingDays(map.get('cycle_processing_days')!);
+        if (map.has(SETTINGS_KEYS.CUTOFF_START)) setCutoffStart(map.get(SETTINGS_KEYS.CUTOFF_START)!);
+        if (map.has(SETTINGS_KEYS.CUTOFF_END)) setCutoffEnd(map.get(SETTINGS_KEYS.CUTOFF_END)!);
+        if (map.has(SETTINGS_KEYS.PACK_LEAD_DAYS)) setPackLeadDays(map.get(SETTINGS_KEYS.PACK_LEAD_DAYS)!);
+        if (map.has(SETTINGS_KEYS.DELIVERY_LEAD_DAYS)) setDeliveryLeadDays(map.get(SETTINGS_KEYS.DELIVERY_LEAD_DAYS)!);
+        if (map.has(SETTINGS_KEYS.CYCLE_CUTOFF_DAYS)) setCycleDays(map.get(SETTINGS_KEYS.CYCLE_CUTOFF_DAYS)!);
+        if (map.has(SETTINGS_KEYS.CYCLE_DELIVERY_LEAD_DAYS)) setCycleDeliveryLeadDays(map.get(SETTINGS_KEYS.CYCLE_DELIVERY_LEAD_DAYS)!);
+        if (map.has(SETTINGS_KEYS.CYCLES_PER_MONTH)) setCyclesPerMonth(map.get(SETTINGS_KEYS.CYCLES_PER_MONTH)!);
+        if (map.has(SETTINGS_KEYS.CYCLE_PROCESSING_DAYS)) setCycleProcessingDays(map.get(SETTINGS_KEYS.CYCLE_PROCESSING_DAYS)!);
       } catch (e) {
         console.warn('Failed to load settings', e);
       } finally {
@@ -52,14 +53,14 @@ export default function OperationsConfig() {
     setSaving(true);
     try {
       await api.mutations.settings.setBulk([
-        { key: 'cutoff_start', value: cutoffStart, description: 'Daily order cut-off start time (HH:mm)' },
-        { key: 'cutoff_end', value: cutoffEnd, description: 'Daily order cut-off end time (HH:mm)' },
-        { key: 'pack_lead_days', value: packLeadDays, description: 'Days after cut-off to pack orders' },
-        { key: 'delivery_lead_days', value: deliveryLeadDays, description: 'Days after cut-off to deliver orders' },
-        { key: 'cycle_cutoff_days', value: cycleDays, description: 'Subscription cycle cut-off days of month (comma-separated)' },
-        { key: 'cycle_delivery_lead_days', value: cycleDeliveryLeadDays, description: 'Days after cycle cut-off to deliver subscription orders' },
-        { key: 'cycles_per_month', value: cyclesPerMonth, description: 'Number of subscription cycles per month' },
-        { key: 'cycle_processing_days', value: cycleProcessingDays, description: 'Days to process a subscription cycle (picking through shipping)' },
+        { key: SETTINGS_KEYS.CUTOFF_START, value: cutoffStart, description: 'Daily order cut-off start time (HH:mm)' },
+        { key: SETTINGS_KEYS.CUTOFF_END, value: cutoffEnd, description: 'Daily order cut-off end time (HH:mm)' },
+        { key: SETTINGS_KEYS.PACK_LEAD_DAYS, value: packLeadDays, description: 'Days after cut-off to pack orders' },
+        { key: SETTINGS_KEYS.DELIVERY_LEAD_DAYS, value: deliveryLeadDays, description: 'Days after cut-off to deliver orders' },
+        { key: SETTINGS_KEYS.CYCLE_CUTOFF_DAYS, value: cycleDays, description: 'Subscription cycle cut-off days of month (comma-separated)' },
+        { key: SETTINGS_KEYS.CYCLE_DELIVERY_LEAD_DAYS, value: cycleDeliveryLeadDays, description: 'Days after cycle cut-off to deliver subscription orders' },
+        { key: SETTINGS_KEYS.CYCLES_PER_MONTH, value: cyclesPerMonth, description: 'Number of subscription cycles per month' },
+        { key: SETTINGS_KEYS.CYCLE_PROCESSING_DAYS, value: cycleProcessingDays, description: 'Days to process a subscription cycle (picking through shipping)' },
       ]);
       toast.success('Operations settings saved');
     } catch (e: any) {

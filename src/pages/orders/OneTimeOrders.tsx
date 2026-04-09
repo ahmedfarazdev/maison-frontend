@@ -10,6 +10,7 @@ import { PageHeader, SectionCard, StatusBadge, EmptyState } from '@/components/s
 import { Button } from '@/components/ui/button';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api-client';
+import { SETTINGS_KEYS } from '@/lib/settings-keys';
 import {
   ShoppingCart, Search, Eye, User, MapPin, Calendar,
   Package, X, Loader2, Clock, ChevronDown, ChevronRight,
@@ -236,10 +237,10 @@ export default function OneTimeOrders() {
       try {
         const res = await api.settings.list();
         const map = new Map(res.data.map((s: any) => [s.key, s.value]));
-        if (map.has('cutoff_start')) setCutoffStart(String(map.get('cutoff_start')));
-        if (map.has('cutoff_end')) setCutoffEnd(String(map.get('cutoff_end')));
-        if (map.has('pack_lead_days')) setPackLeadDays(parseInt(String(map.get('pack_lead_days'))) || 1);
-        if (map.has('delivery_lead_days')) setDeliveryLeadDays(parseInt(String(map.get('delivery_lead_days'))) || 2);
+        if (map.has(SETTINGS_KEYS.CUTOFF_START)) setCutoffStart(String(map.get(SETTINGS_KEYS.CUTOFF_START)));
+        if (map.has(SETTINGS_KEYS.CUTOFF_END)) setCutoffEnd(String(map.get(SETTINGS_KEYS.CUTOFF_END)));
+        if (map.has(SETTINGS_KEYS.PACK_LEAD_DAYS)) setPackLeadDays(parseInt(String(map.get(SETTINGS_KEYS.PACK_LEAD_DAYS))) || 1);
+        if (map.has(SETTINGS_KEYS.DELIVERY_LEAD_DAYS)) setDeliveryLeadDays(parseInt(String(map.get(SETTINGS_KEYS.DELIVERY_LEAD_DAYS))) || 2);
       } catch (e) { /* use defaults */ }
     })();
   }, []);

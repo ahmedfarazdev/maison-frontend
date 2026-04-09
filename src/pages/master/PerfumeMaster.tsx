@@ -188,7 +188,7 @@ export default function PerfumeMaster() {
 
   const addPerfumeMutation = useMutation({
     mutationFn: async (perfume: Perfume) => {
-      // Persist perfume to database — master data only, no stock creation.
+      // 1. Create Perfume
       await api.mutations.perfumes.create({
         masterId: perfume.master_id,
         brand: perfume.brand,
@@ -228,32 +228,54 @@ export default function PerfumeMaster() {
         brandImageUrl: perfume.brand_image_url || null,
       });
 
-      // Also create a syringe for this perfume
+      // 2. Determine robust Syringe ID (max sequence + 1 to avoid collisions)
       const currentSyringes = syringesQuery.data || [];
-      const nextSeq = currentSyringes.length + 1;
+      const maxSeq = currentSyringes.reduce((max, s) => Math.max(max, s.sequence_number || 0), 0);
+      const nextSeq = maxSeq + 1;
       const syringeId = `S/${nextSeq}`;
-      await api.mutations.syringes.create({
-        syringeId,
-        assignedMasterId: perfume.master_id,
-        dedicatedPerfumeName: `${perfume.brand} ${perfume.name}`,
-        dedicatedPerfumeId: perfume.master_id,
-        sequenceNumber: nextSeq,
-        size: '5ml',
-        status: 'active',
-        useCount: 0,
-        active: true,
-        notes: 'Auto-created with perfume',
-      });
-      return { perfume, syringeId };
+
+      // 3. Attempt to create syringe for this perfume
+      let syringeCreated = false;
+      try {
+        await api.mutations.syringes.create({
+          syringeId,
+          assignedMasterId: perfume.master_id,
+          dedicatedPerfumeName: `${perfume.brand} ${perfume.name}`,
+          dedicatedPerfumeId: perfume.master_id,
+          sequenceNumber: nextSeq,
+          size: '5ml',
+          status: 'active',
+          useCount: 0,
+          active: true,
+          notes: 'Auto-created with perfume',
+        });
+        syringeCreated = true;
+      } catch (err) {
+        console.error('Syringe auto-creation failed:', err);
+      }
+
+      return { perfume, syringeId, syringeCreated };
     },
-    onSuccess: ({ perfume, syringeId }) => {
+    onSuccess: ({ perfume, syringeId, syringeCreated }) => {
       queryClient.invalidateQueries({ queryKey: [api.master.perfumes.name] });
       queryClient.invalidateQueries({ queryKey: [api.syringes.list.name] });
+      
+      // Close form and show the newly created perfume in UI list
       setShowAddForm(false);
-      toast.success(`Syringe ${syringeId} auto-created`);
+      setSelected(perfume); // Open the detail drawer for the new perfume
+      
+      if (syringeCreated) {
+        toast.success(`Perfume created and Syringe ${syringeId} auto-assigned`);
+      } else {
+        toast.warning('Perfume created, syringe was not created', {
+          description: 'A duplicate Syringe ID may have been detected. Please create a syringe manually in Facilities.',
+          duration: 8000
+        });
+      }
+      
       toast.info('To add stock, go to Station 0 → Stock Register', { duration: 5000 });
     },
-    meta: { successMessage: 'Perfume added to Master Data' }
+    // Removed default meta.successMessage to avoid double toasts when syringeCreated is false
   });
 
   const editPerfumeMutation = useMutation({

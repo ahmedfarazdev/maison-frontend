@@ -13,17 +13,21 @@ import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/shared';
 import { cn } from '@/lib/utils';
 import {
-  Plus, Search, X, Edit2, Trash2, Droplets, Download, FileSpreadsheet, Upload, Check, AlertTriangle,
+  Plus, Search, X, Edit2, Trash2, Droplets, Download, FileSpreadsheet, Upload, Check, AlertTriangle, Loader2,
 } from 'lucide-react';
 
 // ---- Types ----
 interface Note {
-  id: number;
+  id: string;
   noteId: string;
   name: string;
   imageUrl: string | null;
@@ -39,6 +43,25 @@ interface PerfumeRef {
   notePosition: string; // top, heart, base
 }
 
+const slugify = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+
+const makeNoteId = (name: string, existing: Set<string>) => {
+  const base = slugify(name) || `note-${Date.now()}`;
+  let candidate = base;
+  let counter = 2;
+  while (existing.has(candidate)) {
+    candidate = `${base}-${counter}`;
+    counter += 1;
+  }
+  existing.add(candidate);
+  return candidate;
+};
+
 export default function NotesLibrary() {
   const [search, setSearch] = useState('');
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -50,6 +73,7 @@ export default function NotesLibrary() {
   const [addForm, setAddForm] = useState({ name: '', imageUrl: '', description: '' });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // CSV import state (matching Perfume Master pattern)
@@ -74,7 +98,7 @@ export default function NotesLibrary() {
 
   const notes: Note[] = notesRes ?? [];
   const counts: Record<string, number> = (countsData as any) ?? {};
-  const perfumes: PerfumeRef[] = (perfumesForNote as any)?.data ?? [];
+  const perfumes: PerfumeRef[] = (perfumesForNote as any) ?? [];
 
   // Filtering
   const filtered = useMemo(() => {
@@ -91,9 +115,12 @@ export default function NotesLibrary() {
   // ---- Add Note ----
   const handleAdd = async () => {
     if (!addForm.name.trim()) { toast.error('Note name is required'); return; }
+    const existing = new Set(notes.map(n => n.noteId.toLowerCase()));
+    const noteId = makeNoteId(addForm.name.trim(), existing);
     setSaving(true);
     try {
       await api.notes.create({
+        noteId,
         name: addForm.name.trim(),
         imageUrl: addForm.imageUrl.trim() || undefined,
         description: addForm.description.trim() || undefined,
@@ -124,7 +151,7 @@ export default function NotesLibrary() {
     if (!selectedNote || !editForm.name.trim()) return;
     setSaving(true);
     try {
-      await api.notes.update(selectedNote.noteId, {
+      await api.notes.update(selectedNote.id, {
         name: editForm.name.trim(),
         imageUrl: editForm.imageUrl.trim() || undefined,
         description: editForm.description.trim() || undefined,
@@ -141,12 +168,17 @@ export default function NotesLibrary() {
 
   // ---- Delete Note ----
   const handleDelete = async (note: Note) => {
-    if (!confirm(`Delete "${note.name}" from the notes library?`)) return;
-    setDeleting(note.noteId);
+    setDeleteTarget(note);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(deleteTarget.id);
     try {
-      await api.notes.delete(note.noteId);
-      toast.success(`"${note.name}" deleted`);
+      await api.notes.delete(deleteTarget.id);
+      toast.success(`"${deleteTarget.name}" deleted`);
       refresh();
+      setDeleteTarget(null);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to delete note');
     } finally {
@@ -248,7 +280,9 @@ export default function NotesLibrary() {
     if (validRows.length === 0) return;
     setImporting(true);
     try {
+      const existingIds = new Set(notes.map(n => n.noteId.toLowerCase()));
       const notesToImport = validRows.map(r => ({
+        noteId: makeNoteId(r.name, existingIds),
         name: r.name,
         imageUrl: r.imageUrl,
         description: r.description,
@@ -273,7 +307,7 @@ export default function NotesLibrary() {
 
   // ---- Note Card ----
   const NoteCard = ({ note }: { note: Note }) => {
-    const count = counts[note.name] ?? 0;
+    const count = counts[note.name.toLowerCase()] ?? 0;
 
     return (
       <div
@@ -313,7 +347,7 @@ export default function NotesLibrary() {
           <button
             onClick={(e) => { e.stopPropagation(); handleDelete(note); }}
             className="p-1 bg-background/80 backdrop-blur rounded-md hover:bg-destructive/20 border border-border/50"
-            disabled={deleting === note.noteId}
+            disabled={deleting === note.id}
           >
             <Trash2 className="w-3 h-3 text-muted-foreground" />
           </button>
@@ -408,8 +442,9 @@ export default function NotesLibrary() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddDialog(false)}>Cancel</Button>
-            <Button onClick={handleAdd} disabled={saving || !addForm.name.trim()} className="bg-gold hover:bg-gold/90 text-gold-foreground">
+            <Button variant="outline" onClick={() => setShowAddDialog(false)} disabled={saving}>Cancel</Button>
+            <Button onClick={handleAdd} disabled={saving || !addForm.name.trim()} className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5">
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
               {saving ? 'Adding...' : 'Add Note'}
             </Button>
           </DialogFooter>
@@ -447,8 +482,9 @@ export default function NotesLibrary() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancel</Button>
-            <Button onClick={handleEdit} disabled={saving || !editForm.name.trim()} className="bg-gold hover:bg-gold/90 text-gold-foreground">
+            <Button variant="outline" onClick={() => setShowEditDialog(false)} disabled={saving}>Cancel</Button>
+            <Button onClick={handleEdit} disabled={saving || !editForm.name.trim()} className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5">
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
               {saving ? 'Saving...' : 'Save Changes'}
             </Button>
           </DialogFooter>

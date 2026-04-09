@@ -167,10 +167,12 @@ export function calcDecantPrice(
 export function calcAllDecantPrices(
   pricePerMl: number,
   hypeLevel: HypeLevel,
+  mlDiscounts: MlDiscount[] = DEFAULT_ML_DISCOUNTS,
+  alacarteMultipliers: HypeMultiplier[] = DEFAULT_ALACARTE_MULT,
 ): { size_ml: number; price: number; label: string; discount_factor: number }[] {
-  return DEFAULT_ML_DISCOUNTS.map(d => ({
+  return mlDiscounts.map(d => ({
     size_ml: d.ml_size,
-    price: calcDecantPrice(pricePerMl, d.ml_size, hypeLevel),
+    price: calcDecantPrice(pricePerMl, d.ml_size, hypeLevel, mlDiscounts, alacarteMultipliers),
     label: d.label,
     discount_factor: d.discount_factor,
   }));
@@ -194,12 +196,16 @@ export function calcFullPricing(
   wholesalePrice: number,
   referenceSizeMl: number,
   hypeLevel: HypeLevel,
+  surcharges: SurchargeTier[] = DEFAULT_SURCHARGES,
+  subHypeMultipliers: HypeMultiplier[] = DEFAULT_SUB_HYPE_MULT,
+  mlDiscounts: MlDiscount[] = DEFAULT_ML_DISCOUNTS,
+  alacarteMultipliers: HypeMultiplier[] = DEFAULT_ALACARTE_MULT,
 ): PricingSummary {
   const pricePerMl = calcPricePerMl(wholesalePrice, referenceSizeMl);
-  const surchargeTier = determineSurchargeTier(pricePerMl, hypeLevel);
-  const alacarteMult = getAlacarteMultiplier(hypeLevel);
-  const subHypeMult = DEFAULT_SUB_HYPE_MULT.find(m => m.hype === hypeLevel)?.multiplier || 1;
-  const decantPrices = calcAllDecantPrices(pricePerMl, hypeLevel);
+  const surchargeTier = determineSurchargeTier(pricePerMl, hypeLevel, surcharges, subHypeMultipliers);
+  const alacarteMult = getAlacarteMultiplier(hypeLevel, alacarteMultipliers);
+  const subHypeMult = subHypeMultipliers.find(m => m.hype === hypeLevel)?.multiplier || 1;
+  const decantPrices = calcAllDecantPrices(pricePerMl, hypeLevel, mlDiscounts, alacarteMultipliers);
 
   return {
     wholesale_price: wholesalePrice,

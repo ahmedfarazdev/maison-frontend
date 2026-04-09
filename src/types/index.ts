@@ -107,6 +107,7 @@ export interface Brand {
 }
 
 export interface AuraDefinition {
+  id?: string;
   aura_id: string;
   name: string;
   color: AuraColor;
@@ -121,6 +122,7 @@ export interface AuraDefinition {
 }
 
 export interface Family {
+  id?: string;
   main_family_id: string;
   name: string;
   display_order: number;
@@ -130,6 +132,7 @@ export interface Family {
 }
 
 export interface SubFamily {
+  id?: string;
   sub_family_id: string;
   ff_code: string; // e.g. FF001
   main_family_id: string;

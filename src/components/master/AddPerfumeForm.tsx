@@ -21,7 +21,17 @@ import {
   OCCASIONS,
   PERSONALITIES,
 } from '@/lib/master-id-generator';
-import { DECANT_SIZES, calcPricePerMl, determineSurchargeTier, calcAllDecantPrices, calcFullPricing } from '@/lib/pricing-engine';
+import {
+  DECANT_SIZES,
+  calcPricePerMl,
+  determineSurchargeTier,
+  calcAllDecantPrices,
+  calcFullPricing,
+  DEFAULT_SURCHARGES,
+  DEFAULT_SUB_HYPE_MULT,
+  DEFAULT_ML_DISCOUNTS,
+  DEFAULT_ALACARTE_MULT,
+} from '@/lib/pricing-engine';
 import type { AuraColor, Concentration, HypeLevel, ScentType, DecantPricing, Perfume, Brand } from '@/types';
 import {
   X, ChevronRight, ChevronLeft, Check, Copy, Sparkles,
@@ -31,6 +41,7 @@ import {
 import { MultiImageUpload } from '@/components/shared/MultiImageUpload';
 import NoteMultiSelect from '@/components/master/NoteMultiSelect';
 import { useApiQuery } from '@/hooks/useApiQuery';
+import { usePricingRules } from '@/hooks/usePricingRules';
 import { api } from '@/lib/api-client';
 
 // ---- Aura color map for visual indicators ----
@@ -147,7 +158,7 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
     [],
   );
   const noteOptions = useMemo(() => {
-    const items = (notesRes as any)?.data ?? [];
+    const items = (notesRes as any) ?? [];
     return items.map((n: any) => ({
       noteId: n.noteId,
       name: n.name,
@@ -155,6 +166,12 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
       imageUrl: n.imageUrl,
     }));
   }, [notesRes]);
+
+  const { data: pricingRules } = usePricingRules();
+  const surchargeTiers = pricingRules?.surcharges ?? DEFAULT_SURCHARGES;
+  const subHypeMultipliers = pricingRules?.subHypeMultipliers ?? DEFAULT_SUB_HYPE_MULT;
+  const mlDiscounts = pricingRules?.mlDiscounts ?? DEFAULT_ML_DISCOUNTS;
+  const alacarteMultipliers = pricingRules?.alacarteMultipliers ?? DEFAULT_ALACARTE_MULT;
 
   // Build initial state from editPerfume if provided
   const editInitialState: FormState | null = editPerfume ? {
@@ -233,10 +250,15 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
   const autoSurchargeTier = useMemo(() => {
     const ppm = parseFloat(form.price_per_ml || autoCalcPricePerMl);
     if (ppm > 0 && form.hype_level) {
-      return determineSurchargeTier(ppm, form.hype_level as HypeLevel);
+      return determineSurchargeTier(
+        ppm,
+        form.hype_level as HypeLevel,
+        surchargeTiers,
+        subHypeMultipliers,
+      );
     }
     return null;
-  }, [form.price_per_ml, autoCalcPricePerMl, form.hype_level]);
+  }, [form.price_per_ml, autoCalcPricePerMl, form.hype_level, surchargeTiers, subHypeMultipliers]);
 
   // Auto-set surcharge_category when tier is determined
   useEffect(() => {
@@ -253,10 +275,15 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
   const autoDecantPrices = useMemo(() => {
     const ppm = parseFloat(form.price_per_ml || autoCalcPricePerMl);
     if (ppm > 0 && form.hype_level) {
-      return calcAllDecantPrices(ppm, form.hype_level as HypeLevel);
+      return calcAllDecantPrices(
+        ppm,
+        form.hype_level as HypeLevel,
+        mlDiscounts,
+        alacarteMultipliers,
+      );
     }
     return null;
-  }, [form.price_per_ml, autoCalcPricePerMl, form.hype_level]);
+  }, [form.price_per_ml, autoCalcPricePerMl, form.hype_level, mlDiscounts, alacarteMultipliers]);
 
   // ---- Auto-detect price multiplier from hype level ----
   const autoMultiplier = useMemo(() => {
@@ -264,10 +291,14 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
     const pricing = calcFullPricing(
       parseFloat(form.wholesale_price) || 0,
       parseFloat(form.reference_size_ml) || 100,
-      form.hype_level as HypeLevel
+      form.hype_level as HypeLevel,
+      surchargeTiers,
+      subHypeMultipliers,
+      mlDiscounts,
+      alacarteMultipliers,
     );
     return pricing.alacarte_multiplier.toString();
-  }, [form.hype_level, form.wholesale_price, form.reference_size_ml]);
+  }, [form.hype_level, form.wholesale_price, form.reference_size_ml, surchargeTiers, subHypeMultipliers, mlDiscounts, alacarteMultipliers]);
 
   // ---- Auto-select aura_id when aura_color changes ----
   useEffect(() => {

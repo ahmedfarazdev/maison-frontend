@@ -9,6 +9,7 @@ import { InlineStatusSelect } from '@/components/shared/InlineStatusSelect';
 import { Button } from '@/components/ui/button';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api-client';
+import { SETTINGS_KEYS } from '@/lib/settings-keys';
 import {
   RotateCcw, Calendar, Package, Users, ChevronRight, Plus, Play,
   Pause, CheckCircle2, AlertTriangle, Eye, X, User, MapPin,
@@ -84,8 +85,8 @@ export default function Subscriptions() {
       try {
         const res = await api.settings.list();
         const map = new Map(res.data.map((s: any) => [s.key, s.value]));
-        if (map.has('cycle_cutoff_days')) setCycleDays(String(map.get('cycle_cutoff_days')));
-        if (map.has('cycle_delivery_lead_days')) setCycleDeliveryLead(parseInt(String(map.get('cycle_delivery_lead_days'))) || 7);
+        if (map.has(SETTINGS_KEYS.CYCLE_CUTOFF_DAYS)) setCycleDays(String(map.get(SETTINGS_KEYS.CYCLE_CUTOFF_DAYS)));
+        if (map.has(SETTINGS_KEYS.CYCLE_DELIVERY_LEAD_DAYS)) setCycleDeliveryLead(parseInt(String(map.get(SETTINGS_KEYS.CYCLE_DELIVERY_LEAD_DAYS))) || 7);
       } catch (e) { /* use defaults */ }
     })();
   }, []);

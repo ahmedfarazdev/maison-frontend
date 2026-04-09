@@ -12,6 +12,12 @@ import {
   generateAlertsForRange, generateCriticalPerfumesForRange,
 } from './mock-data-timerange';
 import {
+  DEFAULT_SURCHARGES,
+  DEFAULT_SUB_HYPE_MULT,
+  DEFAULT_ML_DISCOUNTS,
+  DEFAULT_ALACARTE_MULT,
+} from './pricing-engine';
+import {
   mapPerfume, mapBrand, mapSupplier, mapSyringe, mapPackagingSku,
   mapVaultLocation, mapInventoryBottle, mapDecantBottle, mapOrder,
   mapJob, mapBottleLedgerEvent, mapDecantLedgerEvent, mapSubscriptionCycle,
@@ -23,7 +29,7 @@ import {
 // Replaces tRPC with standard fetch calls to Fastify backend
 // ============================================================
 
-export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+export const API_BASE = import.meta.env.VITE_API_URL
 
 const ACCESS_TOKEN_KEY = 'sb-access-token';
 const REFRESH_TOKEN_KEY = 'sb-refresh-token';
@@ -157,6 +163,151 @@ function wrapOne<T>(data: T): ApiResponse<T> {
   return { data };
 }
 
+const normalizeList = <T = any>(input: unknown): T[] => {
+  if (Array.isArray(input)) return input as T[];
+  const data = (input as { data?: T[] } | null)?.data;
+  return Array.isArray(data) ? data : [];
+};
+
+const normalizeString = (value: unknown, fallback = ''): string =>
+  typeof value === 'string' ? value : fallback;
+
+const normalizeArray = <T>(value: T[] | null | undefined): T[] =>
+  Array.isArray(value) ? value : [];
+
+const DEFAULT_TWO_ML_TIERS = [
+  { s_category: 'S0', price: 25 },
+  { s_category: 'S1', price: 35 },
+  { s_category: 'S2', price: 45 },
+  { s_category: 'S3', price: 55 },
+  { s_category: 'S4', price: 65 },
+  { s_category: 'S5', price: 75 },
+];
+
+function mapAuraDefinition(row: any): AuraDefinition {
+  return {
+    aura_id: normalizeString(row?.auraId ?? row?.aura_id),
+    name: normalizeString(row?.name),
+    color: normalizeString(row?.color, 'Red') as AuraDefinition['color'],
+    element: normalizeString(row?.element),
+    keywords: normalizeArray<string>(row?.keywords),
+    persona: normalizeString(row?.persona),
+    tagline: normalizeString(row?.tagline),
+    description: normalizeString(row?.description),
+    core_drive: normalizeString(row?.coreDrive ?? row?.core_drive),
+    balance_aura: normalizeString(row?.balanceAura ?? row?.balance_aura),
+    color_hex: normalizeString(row?.colorHex ?? row?.color_hex, '#888888'),
+  };
+}
+
+function mapFamily(row: any): Family {
+  return {
+    main_family_id: normalizeString(row?.familyId ?? row?.mainFamilyId ?? row?.main_family_id),
+    name: normalizeString(row?.name),
+    display_order: Number(row?.displayOrder ?? row?.display_order ?? 0),
+    tagline: normalizeString(row?.tagline),
+    description: normalizeString(row?.description),
+    sub_families: normalizeArray<string>(row?.subFamilies ?? row?.sub_families),
+  };
+}
+
+function mapSubFamily(row: any): SubFamily {
+  return {
+    sub_family_id: normalizeString(row?.subFamilyId ?? row?.sub_family_id),
+    ff_code: normalizeString(row?.ffCode ?? row?.ff_code),
+    main_family_id: normalizeString(row?.mainFamilyId ?? row?.main_family_id),
+    main_family_name: normalizeString(row?.mainFamilyName ?? row?.main_family_name),
+    name: normalizeString(row?.name),
+    scent_dna: normalizeString(row?.scentDna ?? row?.scent_dna),
+    ritual_name: normalizeString(row?.ritualName ?? row?.ritual_name),
+    ritual_occasions: normalizeString(row?.ritualOccasions ?? row?.ritual_occasions),
+    aura_name: normalizeString(row?.auraName ?? row?.aura_name),
+    aura_color: normalizeString(row?.auraColor ?? row?.aura_color, 'Red') as SubFamily['aura_color'],
+    description: normalizeString(row?.description),
+    scent_story: normalizeString(row?.scentStory ?? row?.scent_story),
+    key_notes: normalizeArray<string>(row?.keyNotes ?? row?.key_notes),
+    mood_tags: normalizeArray<string>(row?.moodTags ?? row?.mood_tags),
+    prominent_notes: normalizeString(row?.prominentNotes ?? row?.prominent_notes),
+    display_order: row?.displayOrder ?? row?.display_order,
+  };
+}
+
+const toAuraPayload = (input: any): Record<string, unknown> => {
+  const payload: Record<string, unknown> = {};
+  const auraId = input?.auraId ?? input?.aura_id;
+  if (auraId) payload.auraId = auraId;
+  if (input?.name !== undefined) payload.name = input.name;
+  if (input?.color !== undefined) payload.color = input.color;
+  const colorHex = input?.colorHex ?? input?.color_hex;
+  if (colorHex !== undefined) payload.colorHex = colorHex;
+  if (input?.element !== undefined) payload.element = input.element;
+  if (input?.keywords !== undefined) payload.keywords = input.keywords;
+  if (input?.persona !== undefined) payload.persona = input.persona;
+  if (input?.tagline !== undefined) payload.tagline = input.tagline;
+  if (input?.description !== undefined) payload.description = input.description;
+  const coreDrive = input?.coreDrive ?? input?.core_drive;
+  if (coreDrive !== undefined) payload.coreDrive = coreDrive;
+  const balanceAura = input?.balanceAura ?? input?.balance_aura;
+  if (balanceAura !== undefined) payload.balanceAura = balanceAura;
+  if (input?.active !== undefined) payload.active = input.active;
+  return payload;
+};
+
+const toFamilyPayload = (input: any): Record<string, unknown> => {
+  const payload: Record<string, unknown> = {};
+  const familyId = input?.familyId ?? input?.main_family_id ?? input?.mainFamilyId;
+  if (familyId) payload.familyId = familyId;
+  if (input?.name !== undefined) payload.name = input.name;
+  const displayOrder = input?.displayOrder ?? input?.display_order;
+  if (displayOrder !== undefined) payload.displayOrder = displayOrder;
+  if (input?.tagline !== undefined) payload.tagline = input.tagline;
+  if (input?.description !== undefined) payload.description = input.description;
+  const subFamilies = input?.subFamilies ?? input?.sub_families;
+  if (subFamilies !== undefined) payload.subFamilies = subFamilies;
+  if (input?.active !== undefined) payload.active = input.active;
+  return payload;
+};
+
+const toSubFamilyPayload = (input: any): Record<string, unknown> => {
+  const payload: Record<string, unknown> = {};
+  const subFamilyId = input?.subFamilyId ?? input?.sub_family_id;
+  if (subFamilyId) payload.subFamilyId = subFamilyId;
+  const ffCode = input?.ffCode ?? input?.ff_code;
+  if (ffCode) payload.ffCode = ffCode;
+  const mainFamilyId = input?.mainFamilyId ?? input?.main_family_id;
+  if (mainFamilyId) payload.mainFamilyId = mainFamilyId;
+  const mainFamilyName = input?.mainFamilyName ?? input?.main_family_name;
+  if (mainFamilyName !== undefined) payload.mainFamilyName = mainFamilyName;
+  if (input?.name !== undefined) payload.name = input.name;
+  const scentDna = input?.scentDna ?? input?.scent_dna;
+  if (scentDna !== undefined) payload.scentDna = scentDna;
+  const ritualName = input?.ritualName ?? input?.ritual_name;
+  if (ritualName !== undefined) payload.ritualName = ritualName;
+  const ritualOccasions = input?.ritualOccasions ?? input?.ritual_occasions;
+  if (ritualOccasions !== undefined) payload.ritualOccasions = ritualOccasions;
+  const auraName = input?.auraName ?? input?.aura_name;
+  if (auraName !== undefined) payload.auraName = auraName;
+  const auraColor = input?.auraColor ?? input?.aura_color;
+  if (auraColor !== undefined) payload.auraColor = auraColor;
+  if (input?.description !== undefined) payload.description = input.description;
+  const scentStory = input?.scentStory ?? input?.scent_story;
+  if (scentStory !== undefined) payload.scentStory = scentStory;
+  const keyNotes = input?.keyNotes ?? input?.key_notes;
+  if (keyNotes !== undefined) payload.keyNotes = keyNotes;
+  const moodTags = input?.moodTags ?? input?.mood_tags;
+  if (moodTags !== undefined) payload.moodTags = moodTags;
+  if (input?.active !== undefined) payload.active = input.active;
+  return payload;
+};
+
+const normalizeNote = (value: string) => value.trim().toLowerCase();
+
+async function fetchPerfumesForNotes(): Promise<Perfume[]> {
+  const res = await apiGet<any>('/perfumes');
+  const items = normalizeList(res);
+  return items.map(mapPerfume);
+}
+
 // ---- Typed API methods ----
 export const api = {
   auth: {
@@ -191,34 +342,90 @@ export const api = {
     },
     notes: {
       list: async () => {
-        try {
-          const res = await apiGet<any>('/notes');
-          return Array.isArray(res) ? wrapList(res) : res;
-        } catch {
-          return wrapList([]);
-        }
+        const res = await apiGet<any>('/notes');
+        const items = normalizeList(res);
+        return wrapList(items);
       },
       create: async (d: any) => apiPost('/notes', d),
       update: async (id: string, d: any) => apiPut(`/notes/${id}`, d),
       delete: async (id: string) => apiDelete(`/notes/${id}`),
     },
-    auras: {
-      list: async () => wrapList([]),
-      create: async (d: any) => wrapOne(d),
-      update: async (id: string, d: any) => wrapOne(d),
-      delete: async (id: string) => wrapOne({ id }),
+    auras: async () => {
+      const res = await apiGet<any>('/taxonomies/auras');
+      const items = normalizeList(res);
+      return wrapList(items.map(mapAuraDefinition));
     },
-    families: {
-      list: async () => wrapList([]),
-      create: async (d: any) => wrapOne(d),
-      update: async (id: string, d: any) => wrapOne(d),
-      delete: async (id: string) => wrapOne({ id }),
+    families: async () => {
+      const res = await apiGet<any>('/taxonomies/families');
+      const items = normalizeList(res);
+      return wrapList(items.map(mapFamily));
     },
-    subFamilies: {
-      list: async () => wrapList([]),
-      create: async (d: any) => wrapOne(d),
-      update: async (id: string, d: any) => wrapOne(d),
-      delete: async (id: string) => wrapOne({ id }),
+    subFamilies: async () => {
+      const res = await apiGet<any>('/taxonomies/sub-families');
+      const items = normalizeList(res);
+      return wrapList(items.map(mapSubFamily));
+    },
+    pricingRules: {
+      surcharges: async () => {
+        try {
+          const rows = await apiGet<any[]>('/pricing-rules/surcharges');
+          return rows.map((r) => ({
+            from_price_per_ml: Number(r.fromPricePerMl ?? r.from_price_per_ml ?? 0),
+            to_price_per_ml: r.toPricePerMl === null || r.toPricePerMl === undefined
+              ? null
+              : Number(r.toPricePerMl),
+            s_category: r.sCategory ?? r.s_category,
+            s_price: Number(r.sPrice ?? r.s_price ?? 0),
+          }));
+        } catch {
+          return DEFAULT_SURCHARGES;
+        }
+      },
+      subHypeMultipliers: async () => {
+        try {
+          const rows = await apiGet<any[]>('/pricing-rules/sub-hype-multipliers');
+          return rows.map((r) => ({
+            hype: r.hype,
+            multiplier: Number(r.multiplier ?? 0),
+          }));
+        } catch {
+          return DEFAULT_SUB_HYPE_MULT;
+        }
+      },
+      mlDiscounts: async () => {
+        try {
+          const rows = await apiGet<any[]>('/pricing-rules/ml-discounts');
+          return rows.map((r) => ({
+            label: r.label,
+            ml_size: Number(r.mlSize ?? r.ml_size ?? 0),
+            discount_factor: Number(r.discountFactor ?? r.discount_factor ?? 0),
+          }));
+        } catch {
+          return DEFAULT_ML_DISCOUNTS;
+        }
+      },
+      alacarteMultipliers: async () => {
+        try {
+          const rows = await apiGet<any[]>('/pricing-rules/alacarte-multipliers');
+          return rows.map((r) => ({
+            hype: r.hype,
+            multiplier: Number(r.multiplier ?? 0),
+          }));
+        } catch {
+          return DEFAULT_ALACARTE_MULT;
+        }
+      },
+      twoMlTiers: async () => {
+        try {
+          const rows = await apiGet<any[]>('/pricing-rules/two-ml-tiers');
+          return rows.map((r) => ({
+            s_category: r.sCategory ?? r.s_category,
+            price: Number(r.price ?? 0),
+          }));
+        } catch {
+          return DEFAULT_TWO_ML_TIERS;
+        }
+      },
     },
     locations: {
       list: async () => wrapList([]),
@@ -235,46 +442,97 @@ export const api = {
     supplierBrands: {
       list: async () => wrapList([]),
     },
-    filterTags: {
-      list: async () => wrapList([]),
+    filterTags: async (category?: string) => {
+      const res = await apiGet<any>('/taxonomies/filter-tags');
+      const items = normalizeList(res);
+      const filtered = category ? items.filter((tag) => tag.category === category) : items;
+      return wrapList(filtered);
     }
   },
 
   // Aliases for components expecting root-level access
   notes: {
     list: async () => {
-      try {
-        const res = await apiGet<any>('/notes');
-        const items = Array.isArray(res) ? res : res.data || [];
-        return wrapList(items);
-      } catch {
-        return wrapList([]);
-      }
+      const res = await apiGet<any>('/notes');
+      const items = normalizeList(res);
+      return wrapList(items);
     },
     create: async (d: any) => apiPost('/notes', d),
     update: async (id: string, d: any) => apiPut(`/notes/${id}`, d),
     delete: async (id: string) => apiDelete(`/notes/${id}`),
-    perfumeCounts: async () => wrapOne({}),
-    perfumesByNote: async (name: string) => wrapList([]),
-    bulkImport: async (d: any) => wrapOne({ imported: 0 }),
+    perfumeCounts: async () => {
+      const perfumes = await fetchPerfumesForNotes();
+      const counts: Record<string, number> = {};
+      for (const perfume of perfumes) {
+        const seen = new Set<string>();
+        const pools = [perfume.notes_top, perfume.notes_heart, perfume.notes_base];
+        for (const pool of pools) {
+          for (const note of pool) {
+            const normalized = normalizeNote(note);
+            if (!normalized || seen.has(normalized)) continue;
+            seen.add(normalized);
+            counts[normalized] = (counts[normalized] ?? 0) + 1;
+          }
+        }
+      }
+      return wrapOne(counts);
+    },
+    perfumesByNote: async (name: string) => {
+      const perfumes = await fetchPerfumesForNotes();
+      const target = normalizeNote(name);
+      const matches = perfumes.flatMap((perfume) => {
+        if (!target) return [];
+        if (perfume.notes_top.some((note) => normalizeNote(note) === target)) {
+          return [{ masterId: perfume.master_id, name: perfume.name, brand: perfume.brand, notePosition: 'top' }];
+        }
+        if (perfume.notes_heart.some((note) => normalizeNote(note) === target)) {
+          return [{ masterId: perfume.master_id, name: perfume.name, brand: perfume.brand, notePosition: 'heart' }];
+        }
+        if (perfume.notes_base.some((note) => normalizeNote(note) === target)) {
+          return [{ masterId: perfume.master_id, name: perfume.name, brand: perfume.brand, notePosition: 'base' }];
+        }
+        return [];
+      });
+      return wrapList(matches);
+    },
+    bulkImport: async (items: any[]) => {
+      let imported = 0;
+      for (const item of items) {
+        await apiPost('/notes', item);
+        imported += 1;
+      }
+      return wrapOne({ imported });
+    },
   },
   auras: {
-    list: async () => wrapList([]),
-    create: async (d: any) => wrapOne(d),
-    update: async (id: string, d: any) => wrapOne(d),
-    delete: async (id: string) => wrapOne({ id }),
+    list: async () => {
+      const res = await apiGet<any>('/taxonomies/auras');
+      const items = normalizeList(res);
+      return wrapList(items.map(mapAuraDefinition));
+    },
+    create: async (d: any) => apiPost('/taxonomies/auras', toAuraPayload(d)),
+    update: async (id: string, d: any) => apiPatch(`/taxonomies/auras/${id}`, toAuraPayload(d)),
+    delete: async (id: string) => apiDelete(`/taxonomies/auras/${id}`),
   },
   families: {
-    list: async () => wrapList([]),
-    create: async (d: any) => wrapOne(d),
-    update: async (id: string, d: any) => wrapOne(d),
-    delete: async (id: string) => wrapOne({ id }),
+    list: async () => {
+      const res = await apiGet<any>('/taxonomies/families');
+      const items = normalizeList(res);
+      return wrapList(items.map(mapFamily));
+    },
+    create: async (d: any) => apiPost('/taxonomies/families', toFamilyPayload(d)),
+    update: async (id: string, d: any) => apiPatch(`/taxonomies/families/${id}`, toFamilyPayload(d)),
+    delete: async (id: string) => apiDelete(`/taxonomies/families/${id}`),
   },
   subFamilies: {
-    list: async () => wrapList([]),
-    create: async (d: any) => wrapOne(d),
-    update: async (id: string, d: any) => wrapOne(d),
-    delete: async (id: string) => wrapOne({ id }),
+    list: async () => {
+      const res = await apiGet<any>('/taxonomies/sub-families');
+      const items = normalizeList(res);
+      return wrapList(items.map(mapSubFamily));
+    },
+    create: async (d: any) => apiPost('/taxonomies/sub-families', toSubFamilyPayload(d)),
+    update: async (id: string, d: any) => apiPatch(`/taxonomies/sub-families/${id}`, toSubFamilyPayload(d)),
+    delete: async (id: string) => apiDelete(`/taxonomies/sub-families/${id}`),
   },
   locations: {
     list: async () => wrapList([]),
@@ -300,10 +558,14 @@ export const api = {
     update: async (id: string, d: any) => wrapOne(d),
   },
   filterTags: {
-    list: async () => wrapList([]),
-    create: async (d: any) => wrapOne(d),
-    update: async (id: string, d: any) => wrapOne(d),
-    delete: async (id: string) => wrapOne({ id }),
+    list: async () => {
+      const res = await apiGet<any>('/taxonomies/filter-tags');
+      const items = normalizeList(res);
+      return wrapList(items);
+    },
+    create: async (d: any) => apiPost('/taxonomies/filter-tags', d),
+    update: async (id: string, d: any) => apiPatch(`/taxonomies/filter-tags/${id}`, d),
+    delete: async (id: string) => apiDelete(`/taxonomies/filter-tags/${id}`),
   },
   supplierBrands: {
     list: async () => wrapList([]),
@@ -550,7 +812,29 @@ export const api = {
     criticalPerfumes: async (params?: any) => wrapOne([]),
   },
   settings: {
-    list: async () => wrapOne(Object.entries(mock.mockSettings).map(([key, value]) => ({ key, value }))),
+    list: async () => {
+      try {
+        const res = await apiGet<any>('/settings');
+        const items = normalizeList(res);
+        return wrapOne(items.map((item: any) => ({
+          key: String(item.key),
+          value: String(item.value),
+          description: item.description ?? undefined,
+        })));
+      } catch {
+        return wrapOne([]);
+      }
+    },
+  },
+  subscriptionPricing: {
+    get: async () => {
+      const res = await apiGet<any>('/subscription-pricing');
+      return wrapOne(res);
+    },
+    update: async (payload: any) => {
+      const res = await apiPut<any>('/subscription-pricing', payload);
+      return wrapOne(res);
+    },
   },
   production: {
     stats: async () => wrapOne({}),
@@ -606,9 +890,9 @@ export const api = {
       listSessions: async () => wrapList([]),
       getSession: async (id: string) => wrapOne({ sessionId: id, items: [] }),
       deleteSession: async (id: string) => apiDelete(`/inventory/reconciliation/${id}`),
-      countItem: async (itemId: number, qty: number, notes?: string) => 
+      countItem: async (itemId: number, qty: number, notes?: string) =>
         apiPost(`/inventory/reconciliation/count`, { itemId, qty, notes }),
-      finalizeSession: async (id: string, applyAdjustments: boolean) => 
+      finalizeSession: async (id: string, applyAdjustments: boolean) =>
         apiPost(`/inventory/reconciliation/${id}/finalize`, { applyAdjustments }),
     },
     orders: {
@@ -638,25 +922,37 @@ export const api = {
       delete: (id: string) => apiDelete(`/inventory/locations/${id}`),
     },
     tags: {
-      create: (d: any) => apiPost('/master-data/filter-tags', d),
-      update: (id: string, d: any) => apiPut(`/master-data/filter-tags/${id}`, d),
-      delete: (id: string) => apiDelete(`/master-data/filter-tags/${id}`),
+      create: (d: any) => apiPost('/taxonomies/filter-tags', d),
+      update: (id: string, d: any) => apiPatch(`/taxonomies/filter-tags/${id}`, d),
+      delete: (id: string) => apiDelete(`/taxonomies/filter-tags/${id}`),
+    },
+    filterTags: {
+      create: (d: any) => apiPost('/taxonomies/filter-tags', d),
+      update: (id: string, d: any) => apiPatch(`/taxonomies/filter-tags/${id}`, d),
+      delete: (id: string) => apiDelete(`/taxonomies/filter-tags/${id}`),
+    },
+    pricing: {
+      saveSurcharges: (items: any[]) => apiPost('/pricing-rules/surcharges', items),
+      saveSubHypeMultipliers: (items: any[]) => apiPost('/pricing-rules/sub-hype-multipliers', items),
+      saveMlDiscounts: (items: any[]) => apiPost('/pricing-rules/ml-discounts', items),
+      saveAlacarteMultipliers: (items: any[]) => apiPost('/pricing-rules/alacarte-multipliers', items),
+      save2mlTiers: (items: any[]) => apiPost('/pricing-rules/two-ml-tiers', items),
     },
     taxonomies: {
       auras: {
-        create: (d: any) => apiPost('/master-data/auras', d),
-        update: (id: string, d: any) => apiPut(`/master-data/auras/${id}`, d),
-        delete: (id: string) => apiDelete(`/master-data/auras/${id}`),
+        create: (d: any) => apiPost('/taxonomies/auras', toAuraPayload(d)),
+        update: (id: string, d: any) => apiPatch(`/taxonomies/auras/${id}`, toAuraPayload(d)),
+        delete: (id: string) => apiDelete(`/taxonomies/auras/${id}`),
       },
       families: {
-        create: (d: any) => apiPost('/master-data/families', d),
-        update: (id: string, d: any) => apiPut(`/master-data/families/${id}`, d),
-        delete: (id: string) => apiDelete(`/Family/${id}`),
+        create: (d: any) => apiPost('/taxonomies/families', toFamilyPayload(d)),
+        update: (id: string, d: any) => apiPatch(`/taxonomies/families/${id}`, toFamilyPayload(d)),
+        delete: (id: string) => apiDelete(`/taxonomies/families/${id}`),
       },
       subFamilies: {
-        create: (d: any) => apiPost('/master-data/sub-families', d),
-        update: (id: string, d: any) => apiPut(`/master-data/sub-families/${id}`, d),
-        delete: (id: string) => apiDelete(`/master-data/sub-families/${id}`),
+        create: (d: any) => apiPost('/taxonomies/sub-families', toSubFamilyPayload(d)),
+        update: (id: string, d: any) => apiPatch(`/taxonomies/sub-families/${id}`, toSubFamilyPayload(d)),
+        delete: (id: string) => apiDelete(`/taxonomies/sub-families/${id}`),
       },
     },
     packagingSkus: {

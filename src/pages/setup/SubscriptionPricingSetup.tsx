@@ -49,55 +49,60 @@ export default function SubscriptionPricingSetup() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await api.settings.list();
-        const s = Object.fromEntries(res.data.map((r: any) => [r.key, r.value]));
-        if (s.sub_base_price) setBasePrice(s.sub_base_price);
-        if (s.sub_extra_vial_price) setExtraVialPrice(s.sub_extra_vial_price);
-        if (s.sub_min_vials) setMinVials(s.sub_min_vials);
-        if (s.sub_max_vials) setMaxVials(s.sub_max_vials);
-        if (s.sub_surcharge_per_level) setSurchargePerLevel(s.sub_surcharge_per_level);
-        if (s.sub_base_surcharge_tier) setBaseSurchargeTier(s.sub_base_surcharge_tier);
-        if (s.sub_annual_discount) setAnnualDiscount(s.sub_annual_discount);
-        if (s.sub_refill_discount) setRefillDiscount(s.sub_refill_discount);
-        if (s.sub_capsule_discount) setCapsuleDiscount(s.sub_capsule_discount);
-        if (s.sub_vault_access_free) setVaultAccessFree(s.sub_vault_access_free === 'true');
-        if (s.sub_exchanges_per_year) setExchangesPerYear(s.sub_exchanges_per_year);
-        if (s.sub_vial_collection_box) setVialCollectionBox(s.sub_vial_collection_box === 'true');
-        if (s.sub_whisperer_vials_per_month) setWhispererVialsPerMonth(s.sub_whisperer_vials_per_month);
-        if (s.sub_whisperer_vial_size) setWhispererVialSize(s.sub_whisperer_vial_size);
-        if (s.sub_billing_terms) setBillingTerms(JSON.parse(s.sub_billing_terms));
-        if (s.sub_pause_enabled) setPauseEnabled(s.sub_pause_enabled === 'true');
-        if (s.sub_skip_enabled) setSkipEnabled(s.sub_skip_enabled === 'true');
-        if (s.sub_cancel_enabled) setCancelEnabled(s.sub_cancel_enabled === 'true');
+        const res = await api.subscriptionPricing.get();
+        const s = res.data;
+        if (s?.basePrice != null) setBasePrice(String(s.basePrice));
+        if (s?.extraVialPrice != null) setExtraVialPrice(String(s.extraVialPrice));
+        if (s?.minVials != null) setMinVials(String(s.minVials));
+        if (s?.maxVials != null) setMaxVials(String(s.maxVials));
+        if (s?.surchargePerLevel != null) setSurchargePerLevel(String(s.surchargePerLevel));
+        if (s?.baseSurchargeTier) setBaseSurchargeTier(s.baseSurchargeTier);
+        if (s?.annualDiscount != null) setAnnualDiscount(String(s.annualDiscount));
+        if (s?.refillDiscount != null) setRefillDiscount(String(s.refillDiscount));
+        if (s?.capsuleDiscount != null) setCapsuleDiscount(String(s.capsuleDiscount));
+        if (s?.vaultAccessFree != null) setVaultAccessFree(Boolean(s.vaultAccessFree));
+        if (s?.exchangesPerYear != null) setExchangesPerYear(String(s.exchangesPerYear));
+        if (s?.vialCollectionBox != null) setVialCollectionBox(Boolean(s.vialCollectionBox));
+        if (s?.whispererVialsPerMonth != null) setWhispererVialsPerMonth(String(s.whispererVialsPerMonth));
+        if (s?.whispererVialSize != null) setWhispererVialSize(String(s.whispererVialSize));
+        if (Array.isArray(s?.billingTerms)) setBillingTerms(s.billingTerms);
+        if (s?.pauseEnabled != null) setPauseEnabled(Boolean(s.pauseEnabled));
+        if (s?.skipEnabled != null) setSkipEnabled(Boolean(s.skipEnabled));
+        if (s?.cancelEnabled != null) setCancelEnabled(Boolean(s.cancelEnabled));
       } catch { /* defaults */ }
       setLoading(false);
     })();
   }, []);
 
   const handleSave = async () => {
+    const toNumber = (value: string, fallback = 0) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
+
     setSaving(true);
     try {
-      const pairs: Record<string, string> = {
-        sub_base_price: basePrice,
-        sub_extra_vial_price: extraVialPrice,
-        sub_min_vials: minVials,
-        sub_max_vials: maxVials,
-        sub_surcharge_per_level: surchargePerLevel,
-        sub_base_surcharge_tier: baseSurchargeTier,
-        sub_annual_discount: annualDiscount,
-        sub_refill_discount: refillDiscount,
-        sub_capsule_discount: capsuleDiscount,
-        sub_vault_access_free: String(vaultAccessFree),
-        sub_exchanges_per_year: exchangesPerYear,
-        sub_vial_collection_box: String(vialCollectionBox),
-        sub_whisperer_vials_per_month: whispererVialsPerMonth,
-        sub_whisperer_vial_size: whispererVialSize,
-        sub_billing_terms: JSON.stringify(billingTerms),
-        sub_pause_enabled: String(pauseEnabled),
-        sub_skip_enabled: String(skipEnabled),
-        sub_cancel_enabled: String(cancelEnabled),
+      const payload = {
+        basePrice: toNumber(basePrice, 149.99),
+        extraVialPrice: toNumber(extraVialPrice, 75),
+        minVials: toNumber(minVials, 1),
+        maxVials: toNumber(maxVials, 4),
+        surchargePerLevel: toNumber(surchargePerLevel, 25),
+        baseSurchargeTier,
+        annualDiscount: toNumber(annualDiscount, 20),
+        refillDiscount: toNumber(refillDiscount, 10),
+        capsuleDiscount: toNumber(capsuleDiscount, 15),
+        vaultAccessFree,
+        exchangesPerYear: toNumber(exchangesPerYear, 3),
+        vialCollectionBox,
+        whispererVialsPerMonth: toNumber(whispererVialsPerMonth, 2),
+        whispererVialSize: toNumber(whispererVialSize, 1),
+        billingTerms,
+        pauseEnabled,
+        skipEnabled,
+        cancelEnabled,
       };
-      await api.mutations.settings.setBulk(Object.entries(pairs).map(([key, value]) => ({ key, value })));
+      await api.subscriptionPricing.update(payload);
       toast.success('Subscription Pricing & Setup saved');
     } catch { toast.error('Failed to save'); }
     setSaving(false);
