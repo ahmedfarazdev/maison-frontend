@@ -54,6 +54,7 @@ export interface DecantPricing {
 
 export interface Perfume {
   master_id: string;
+  brand_id?: string;
   brand: string;
   name: string;
   concentration: Concentration;
@@ -91,6 +92,31 @@ export interface Perfume {
   brand_image_url: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface PerfumeSearchResult {
+  id: string;
+  master_id: string;
+  name: string;
+  brand: string;
+}
+
+export interface BrandInsights {
+  brandId: string;
+  brandName: string;
+  totals: {
+    totalPerfumes: number;
+    inStock: number;
+    outOfStock: number;
+  };
+  pricing: {
+    avgPricePerMl: number;
+    totalRetailValue: number;
+  };
+  concentrationDistribution: { name: string; value: number }[];
+  auraDistribution: { name: string; value: number }[];
+  hypeDistribution: { name: string; value: number }[];
+  topPricePerMl: { masterId: string; name: string; pricePerMl: number; retailPrice: number }[];
 }
 
 // ---- Brands ----
@@ -296,6 +322,7 @@ export type SyringeStatus = 'active' | 'retired' | 'cleaning' | 'damaged';
 export type SyringeSize = '5ml' | '10ml' | '20ml' | 'custom';
 
 export interface Syringe {
+  id: string;               // Database UUID
   syringe_id: string;       // S/1, S/2, S/3... auto-generated sequentially
   assigned_master_id?: string;
   dedicated_perfume_name?: string;

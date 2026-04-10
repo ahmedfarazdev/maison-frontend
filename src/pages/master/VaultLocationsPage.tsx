@@ -2,7 +2,7 @@
 // Vault Locations — Full Location Builder
 // Design: "Maison Ops" — Luxury Operations
 // Zone → Shelf → Slot hierarchy with visual slot grid,
-// occupancy tracking, "Add Bottle to Location" flow,
+// occupancy tracking, "Add Perfume to Location" flow,
 // auto-generated location codes, and Add Zone wizard
 // ============================================================
 
@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { mockPerfumes } from '@/lib/mock-data';
 import { useLocations } from '@/hooks/useLocations';
 import { api } from '@/lib/api-client';
-import type { VaultLocation, LocationType, InventoryBottle, DecantBottle } from '@/types';
+import type { VaultLocation, LocationType, PerfumeSearchResult } from '@/types';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
@@ -98,6 +98,57 @@ mockPerfumes.forEach(p => { perfumeMap[p.master_id] = { name: p.name, brand: p.b
 function getPerfumeName(masterId: string): string {
   const p = perfumeMap[masterId];
   return p ? `${p.brand} — ${p.name}` : masterId;
+}
+
+type SearchablePerfume = PerfumeSearchResult & {
+  _name: string;
+};
+
+function normalizeSearchValue(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function scorePerfumeToken(token: string, perfume: SearchablePerfume): number {
+  const idWords = normalizeSearchValue(perfume.id).split(' ').filter(Boolean);
+  const masterIdWords = normalizeSearchValue(perfume.master_id).split(' ').filter(Boolean);
+  const nameWords = normalizeSearchValue(perfume._name).split(' ').filter(Boolean);
+
+  const compactToken = token.replace(/\s+/g, '');
+  const idCompact = idWords.join('');
+  const masterIdCompact = masterIdWords.join('');
+  const nameNormalized = normalizeSearchValue(perfume._name);
+
+  if (token.length === 1) {
+    if (masterIdWords.some((word) => word.startsWith(token) && word.length > 1)) return 120;
+    if (nameWords.some((word) => word.startsWith(token) && word.length > 1)) return 100;
+    if (idWords.some((word) => word.startsWith(token) && word.length > 1)) return 90;
+    return 0;
+  }
+
+  if (masterIdCompact === compactToken || idCompact === compactToken) return 260;
+  if (masterIdWords.some((word) => word.startsWith(token))) return 200;
+  if (nameWords.some((word) => word.startsWith(token))) return 180;
+  if (masterIdCompact.includes(compactToken) || idCompact.includes(compactToken)) return 140;
+  if (nameNormalized.includes(token)) return 110;
+  return 0;
+}
+
+function filterPerfumeSearchResults<T extends SearchablePerfume>(
+  perfumes: T[],
+  query: string,
+  limit = 20,
+): T[] {
+  if (!query.trim()) return perfumes.slice(0, limit);
+
+  const tokens = normalizeSearchValue(query).split(' ').filter(Boolean);
+
+  const scored = perfumes.map((perfume) => {
+    const score = tokens.reduce((sum, token) => sum + scorePerfumeToken(token, perfume), 0);
+    return { perfume, score };
+  }).filter((s) => s.score > 0);
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map(s => s.perfume).slice(0, limit);
 }
 
 // ---- Slot Cell Component ----
@@ -262,10 +313,10 @@ function AddZoneDialog({ onAdd, onClose, existingZones, isCreating }: {
   );
 }
 
-// ---- Assign Bottle Dialog (click on existing slot) ----
-function AssignBottleDialog({ location, onAssign, onClear, onDelete, isAssigning, isClearing, isDeleting, onClose }: {
+// ---- Assign Perfume Dialog (click on existing slot) ----
+function AssignPerfumeDialog({ location, onAssign, onClear, onDelete, isAssigning, isClearing, isDeleting, onClose }: {
   location: VaultLocation;
-  onAssign: (locId: string, bottleId: string, masterId: string, perfumeName: string) => void;
+  onAssign: (locId: string, masterId: string, perfumeName: string) => void;
   onClear: (locId: string) => void;
   onDelete: (locId: string) => void;
   isAssigning?: boolean;
@@ -274,49 +325,39 @@ function AssignBottleDialog({ location, onAssign, onClear, onDelete, isAssigning
   onClose: () => void;
 }) {
   const [search, setSearch] = useState('');
-  const [bottles, setBottles] = useState<InventoryBottle[]>([]);
-  const [decantBottles, setDecantBottles] = useState<DecantBottle[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedBottle, setSelectedBottle] = useState<(InventoryBottle | DecantBottle) & { _type: 'sealed' | 'decant' } | null>(null);
+  const [searchResults, setSearchResults] = useState<SearchablePerfume[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedPerfume, setSelectedPerfume] = useState<SearchablePerfume | null>(null);
 
-  // Load physical bottles from DB
+  // Search for perfumes
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const [sealedRes, decantRes] = await Promise.all([
-          api.inventory.sealedBottles(),
-          api.inventory.decantBottles(),
-        ]);
-        if (!cancelled) {
-          setBottles(sealedRes.data);
-          setDecantBottles(decantRes.data);
-          setLoading(false);
-        }
-      } catch {
-        if (!cancelled) setLoading(false);
-      }
+    if (!search.trim()) {
+      setSearchResults([]);
+      return;
     }
-    load();
-    return () => { cancelled = true; };
-  }, []);
 
-  // Combine all bottles for search
-  const allBottles = useMemo(() => {
-    const sealed = bottles.map(b => ({ ...b, _type: 'sealed' as const, _name: getPerfumeName(b.master_id), _size: b.size_ml }));
-    const decant = decantBottles.map(b => ({ ...b, _type: 'decant' as const, _name: getPerfumeName(b.master_id), _size: b.size_ml }));
-    return [...sealed, ...decant];
-  }, [bottles, decantBottles]);
+    const handler = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const results = await api.perfumes.search(search);
+        const mapped = results.map((perfume) => ({
+          ...perfume,
+          _name: `${perfume.brand} — ${perfume.name}`,
+        }));
+        setSearchResults(mapped);
+      } catch (error) {
+        console.error('Failed to search perfumes:', error);
+        toast.error('Failed to search for perfumes.');
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
 
-  const filtered = useMemo(() => {
-    if (!search) return [];
-    const q = search.toLowerCase();
-    return allBottles.filter(b =>
-      b.bottle_id.toLowerCase().includes(q) ||
-      b.master_id.toLowerCase().includes(q) ||
-      b._name.toLowerCase().includes(q)
-    ).slice(0, 10);
-  }, [allBottles, search]);
+    return () => clearTimeout(handler);
+  }, [search]);
+
+  const filtered = filterPerfumeSearchResults(searchResults, search, 20);
+
 
   const tc = TYPE_COLORS[location.type];
 
@@ -325,7 +366,7 @@ function AssignBottleDialog({ location, onAssign, onClear, onDelete, isAssigning
       <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div>
-            <h3 className="text-base font-bold">{location.occupied ? 'Slot Details' : 'Assign Bottle'}</h3>
+            <h3 className="text-base font-bold">{location.occupied ? 'Slot Details' : 'Assign Perfume'}</h3>
             <p className="text-xs font-mono text-muted-foreground mt-0.5">{location.location_code}</p>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
@@ -358,7 +399,6 @@ function AssignBottleDialog({ location, onAssign, onClear, onDelete, isAssigning
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Currently Occupied</p>
                 <p className="text-sm font-semibold mt-1">{location.perfume_name || 'Unknown'}</p>
                 <p className="text-[11px] font-mono text-muted-foreground mt-0.5">{location.master_id || '—'}</p>
-                {location.bottle_id && <p className="text-[11px] font-mono text-muted-foreground">Bottle: {location.bottle_id}</p>}
               </div>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
@@ -372,7 +412,7 @@ function AssignBottleDialog({ location, onAssign, onClear, onDelete, isAssigning
                   <AlertDialogHeader>
                     <AlertDialogTitle>Clear Slot Contents</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Are you sure you want to clear this vault slot? This will disconnect the bottle from this location.
+                      Are you sure you want to clear this vault slot? This will disconnect the perfume from this location.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -388,44 +428,43 @@ function AssignBottleDialog({ location, onAssign, onClear, onDelete, isAssigning
           ) : (
             <div className="space-y-4">
               <div>
-                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold block mb-1.5">Search Physical Bottle</label>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold block mb-1.5">Search Perfume</label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by bottle ID, perfume name, or Master ID..." className="pl-9" autoFocus />
+                  <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by perfume name, brand, or Master ID..." className="pl-9" autoFocus />
                 </div>
               </div>
-              {loading && <p className="text-xs text-muted-foreground text-center py-3">Loading bottles...</p>}
-              {search && !loading && (
+              {loading && <div className="text-center py-4"><Loader2 className="w-4 h-4 animate-spin inline-block" /></div>}
+              {!loading && search && (
                 <div className="max-h-48 overflow-y-auto space-y-1 border border-border rounded-lg p-1">
-                  {filtered.map(b => (
-                    <button key={b.bottle_id} onClick={() => { setSelectedBottle(b as any); setSearch(''); }}
+                  {filtered.map(perfume => (
+                    <button key={perfume.id} onClick={() => { setSelectedPerfume(perfume); setSearch(''); }}
                       className={cn('w-full text-left px-3 py-2 rounded-md text-sm transition-colors hover:bg-muted/50',
-                        selectedBottle?.bottle_id === b.bottle_id && 'bg-gold/10 border border-gold/30')}>
+                        selectedPerfume?.id === perfume.id && 'bg-gold/10 border border-gold/30')}>
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="font-medium">{b._name}</p>
-                          <p className="text-[10px] font-mono text-muted-foreground">{b.bottle_id}</p>
+                          <p className="font-medium">{perfume._name}</p>
+                          <p className="text-[10px] font-mono text-muted-foreground">{perfume.master_id}</p>
                         </div>
-                        <StatusBadge variant={b._type === 'sealed' ? 'info' : 'gold'}>{b._type} · {b._size}ml</StatusBadge>
                       </div>
                     </button>
                   ))}
-                  {filtered.length === 0 && <p className="text-xs text-muted-foreground text-center py-3">No bottles found</p>}
+                  {filtered.length === 0 && <p className="text-xs text-muted-foreground text-center py-3">No perfumes found</p>}
                 </div>
               )}
-              {selectedBottle && (
+              {selectedPerfume && (
                 <div className="bg-gold/5 border border-gold/20 rounded-lg p-3">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Selected Bottle</p>
-                  <p className="text-sm font-bold mt-1">{getPerfumeName(selectedBottle.master_id)}</p>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Selected Perfume</p>
+                  <p className="text-sm font-bold mt-1">{selectedPerfume._name}</p>
                   <p className="text-[10px] font-mono text-muted-foreground mt-0.5">
-                    {selectedBottle.bottle_id} · {selectedBottle._type} · {('size_ml' in selectedBottle ? selectedBottle.size_ml : 0)}ml
+                    {selectedPerfume.master_id}
                   </p>
                 </div>
               )}
-              {!search && !selectedBottle && !loading && (
+              {!search && !selectedPerfume && !loading && (
                 <div className="text-center py-6">
                   <Scan className="w-8 h-8 text-muted-foreground/20 mx-auto mb-2" />
-                  <p className="text-xs text-muted-foreground">Search for a physical bottle registered in Station 0</p>
+                  <p className="text-xs text-muted-foreground">Search for a perfume in master data</p>
                 </div>
               )}
             </div>
@@ -459,10 +498,10 @@ function AssignBottleDialog({ location, onAssign, onClear, onDelete, isAssigning
             <div className="flex justify-end gap-3">
               <Button variant="outline" onClick={onClose} disabled={isAssigning || isDeleting}>Cancel</Button>
               <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5"
-                disabled={!selectedBottle || isAssigning || isDeleting}
+                disabled={!selectedPerfume || isAssigning || isDeleting}
                 onClick={() => {
-                  if (selectedBottle) {
-                    onAssign(location.id ?? location.location_id, selectedBottle.bottle_id, selectedBottle.master_id, getPerfumeName(selectedBottle.master_id));
+                  if (selectedPerfume) {
+                    onAssign(location.id ?? location.location_id, selectedPerfume.master_id, selectedPerfume._name);
                   }
                 }}>
                 {isAssigning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
@@ -476,8 +515,8 @@ function AssignBottleDialog({ location, onAssign, onClear, onDelete, isAssigning
   );
 }
 
-// ---- Add Bottle to Vault Location — 2-Step Dialog ----
-// Step 1: Select an existing physical bottle (from Station 0 register)
+// ---- Add Perfume to Vault Location — 2-Step Dialog ----
+// Step 1: Select an existing perfume
 // Step 2: Assign a vault location
 type AddBottleStep = 'bottle' | 'location' | 'confirm';
 
@@ -488,8 +527,7 @@ function AddBottleToLocationDialog({
 }: {
   locations: VaultLocation[];
   onComplete: (data: {
-    bottle: InventoryBottle | DecantBottle;
-    bottleType: 'sealed' | 'decant';
+    perfume: SearchablePerfume;
     locationId: string;
     locationCode: string;
   }) => void;
@@ -497,66 +535,46 @@ function AddBottleToLocationDialog({
 }) {
   const [step, setStep] = useState<AddBottleStep>('bottle');
 
-  // Bottle data from DB
-  const [sealedBottles, setSealedBottles] = useState<InventoryBottle[]>([]);
-  const [decantBottlesList, setDecantBottlesList] = useState<DecantBottle[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-  // Step 1: Bottle selection
-  const [bottleSearch, setBottleSearch] = useState('');
-  const [selectedBottle, setSelectedBottle] = useState<(InventoryBottle | DecantBottle) & { _type: 'sealed' | 'decant'; _name: string } | null>(null);
+  // Step 1: Perfume selection
+  const [perfumeSearch, setPerfumeSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchablePerfume[]>([]);
+  const [selectedPerfume, setSelectedPerfume] = useState<SearchablePerfume | null>(null);
 
   // Step 2: Location selection
   const [locationFilter, setLocationFilter] = useState<LocationType>('sealed');
   const [selectedLocation, setSelectedLocation] = useState<VaultLocation | null>(null);
   const [locationOverride, setLocationOverride] = useState(false);
 
-  // Load bottles from DB
+  // Search perfumes
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const [sealedRes, decantRes] = await Promise.all([
-          api.inventory.sealedBottles(),
-          api.inventory.decantBottles(),
-        ]);
-        if (!cancelled) {
-          setSealedBottles(sealedRes.data);
-          setDecantBottlesList(decantRes.data);
-          setLoading(false);
-        }
-      } catch {
-        if (!cancelled) setLoading(false);
-      }
+    if (!perfumeSearch.trim()) {
+      setSearchResults([]);
+      return;
     }
-    load();
-    return () => { cancelled = true; };
-  }, []);
 
-  // Combine all bottles for search
-  const allBottles = useMemo(() => {
-    const sealed = sealedBottles.map(b => ({
-      ...b,
-      _type: 'sealed' as const,
-      _name: getPerfumeName(b.master_id),
-    }));
-    const decant = decantBottlesList.map(b => ({
-      ...b,
-      _type: 'decant' as const,
-      _name: getPerfumeName(b.master_id),
-    }));
-    return [...sealed, ...decant];
-  }, [sealedBottles, decantBottlesList]);
+    const handler = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const results = await api.perfumes.search(perfumeSearch);
+        const mapped = results.map((perfume) => ({
+          ...perfume,
+          _name: `${perfume.brand} — ${perfume.name}`,
+        }));
+        setSearchResults(mapped);
+      } catch (error) {
+        console.error('Failed to search perfumes:', error);
+        toast.error('Failed to search perfumes.');
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
 
-  const filteredBottles = useMemo(() => {
-    if (!bottleSearch) return allBottles.slice(0, 20);
-    const q = bottleSearch.toLowerCase();
-    return allBottles.filter(b =>
-      b.bottle_id.toLowerCase().includes(q) ||
-      b.master_id.toLowerCase().includes(q) ||
-      b._name.toLowerCase().includes(q)
-    ).slice(0, 20);
-  }, [allBottles, bottleSearch]);
+    return () => clearTimeout(handler);
+  }, [perfumeSearch]);
+
+  const filteredPerfumes = filterPerfumeSearchResults(searchResults, perfumeSearch, 20);
 
   // Auto-select next available location
   const nextAvailableLocation = useMemo(() => {
@@ -568,13 +586,9 @@ function AddBottleToLocationDialog({
     return locations.filter(l => !l.occupied && l.type === locationFilter);
   }, [locations, locationFilter]);
 
-  // When bottle is selected, auto-set location type
-  const handleSelectBottle = (b: typeof allBottles[0]) => {
-    setSelectedBottle(b);
-    setBottleSearch('');
-    // Auto-set location type based on bottle type
-    if (b._type === 'sealed') setLocationFilter('sealed');
-    else setLocationFilter('decant');
+  const handleSelectPerfume = (perfume: SearchablePerfume) => {
+    setSelectedPerfume(perfume);
+    setPerfumeSearch('');
   };
 
   const handleGoToLocation = () => {
@@ -585,7 +599,7 @@ function AddBottleToLocationDialog({
   };
 
   const steps: { key: AddBottleStep; label: string; num: number }[] = [
-    { key: 'bottle', label: 'Select Bottle', num: 1 },
+    { key: 'bottle', label: 'Select Perfume', num: 1 },
     { key: 'location', label: 'Assign Location', num: 2 },
     { key: 'confirm', label: 'Confirm', num: 3 },
   ];
@@ -601,8 +615,8 @@ function AddBottleToLocationDialog({
               <MapPin className="w-5 h-5 text-gold" />
             </div>
             <div>
-              <h3 className="text-base font-bold">Add Bottle to Vault Location</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">Select an existing bottle and assign it to a vault slot</p>
+              <h3 className="text-base font-bold">Add Perfume to Vault Location</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Select an existing perfume and assign it to a vault slot</p>
             </div>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
@@ -630,83 +644,56 @@ function AddBottleToLocationDialog({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* Step 1: Select Bottle */}
+          {/* Step 1: Select Perfume */}
           {step === 'bottle' && (
             <div className="space-y-4">
               <div>
                 <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold block mb-1.5">
-                  Search Physical Bottles (registered in Station 0)
+                  Search Perfumes
                 </label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input value={bottleSearch} onChange={e => setBottleSearch(e.target.value)}
-                    placeholder="Search by bottle ID, perfume name, or Master ID..."
+                  <Input value={perfumeSearch} onChange={e => setPerfumeSearch(e.target.value)}
+                    placeholder="Search by perfume name, brand, or Master ID..."
                     className="pl-9 h-11" autoFocus />
                 </div>
               </div>
 
-              {selectedBottle && (
+              {selectedPerfume && (
                 <div className="bg-gold/5 border border-gold/20 rounded-xl p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Selected Bottle</p>
-                      <p className="text-sm font-bold mt-1">{selectedBottle._name}</p>
-                      <p className="text-[11px] font-mono text-muted-foreground mt-0.5">{selectedBottle.bottle_id}</p>
-                    </div>
-                    <div className="text-right">
-                      <StatusBadge variant={selectedBottle._type === 'sealed' ? 'info' : 'gold'}>
-                        {selectedBottle._type}
-                      </StatusBadge>
-                      <p className="text-sm font-mono font-bold text-gold mt-1">{selectedBottle.size_ml}ml</p>
+                      <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Selected Perfume</p>
+                      <p className="text-sm font-bold mt-1">{selectedPerfume._name}</p>
+                      <p className="text-[11px] font-mono text-muted-foreground mt-0.5">{selectedPerfume.master_id}</p>
                     </div>
                   </div>
-                  {/* Show bottle details as confirmation */}
-                  {'purchase_price' in selectedBottle && (
-                    <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-gold/10">
-                      <div>
-                        <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Size</p>
-                        <p className="text-xs font-mono font-bold">{selectedBottle.size_ml}ml</p>
-                      </div>
-                      <div>
-                        <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Purchase Price</p>
-                        <p className="text-xs font-mono font-bold">AED {(selectedBottle as InventoryBottle).purchase_price}</p>
-                      </div>
-                      <div>
-                        <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Status</p>
-                        <p className="text-xs font-mono font-bold">{(selectedBottle as InventoryBottle).status}</p>
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
 
               {loading ? (
                 <div className="text-center py-8">
                   <div className="w-6 h-6 border-2 border-gold/30 border-t-gold rounded-full animate-spin mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">Loading bottles from inventory...</p>
+                  <p className="text-sm text-muted-foreground">Searching perfumes...</p>
                 </div>
               ) : (
                 <div className="space-y-1 border border-border rounded-lg p-1 max-h-64 overflow-y-auto">
-                  {filteredBottles.map(b => (
-                    <button key={b.bottle_id} onClick={() => handleSelectBottle(b)}
+                  {filteredPerfumes.map(perfume => (
+                    <button key={perfume.id} onClick={() => handleSelectPerfume(perfume)}
                       className={cn('w-full text-left px-4 py-3 rounded-lg text-sm transition-colors hover:bg-muted/50',
-                        selectedBottle?.bottle_id === b.bottle_id && 'bg-gold/10 border border-gold/30')}>
+                        selectedPerfume?.id === perfume.id && 'bg-gold/10 border border-gold/30')}>
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="font-semibold">{b._name}</p>
-                          <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{b.bottle_id}</p>
-                        </div>
-                        <div className="text-right flex items-center gap-2">
-                          <StatusBadge variant={b._type === 'sealed' ? 'info' : 'gold'}>{b._type}</StatusBadge>
-                          <span className="text-xs font-mono text-muted-foreground">{b.size_ml}ml</span>
+                          <p className="font-semibold">{perfume._name}</p>
+                          <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{perfume.master_id}</p>
                         </div>
                       </div>
                     </button>
                   ))}
-                  {filteredBottles.length === 0 && (
+                  {filteredPerfumes.length === 0 && (
                     <div className="text-center py-6">
                       <Wine className="w-8 h-8 text-muted-foreground/20 mx-auto mb-2" />
-                      <p className="text-xs text-muted-foreground">No bottles found. Register bottles in Station 0 first.</p>
+                      <p className="text-xs text-muted-foreground">No perfumes found.</p>
                     </div>
                   )}
                 </div>
@@ -717,16 +704,16 @@ function AddBottleToLocationDialog({
           {/* Step 2: Assign Location */}
           {step === 'location' && (
             <div className="space-y-4">
-              {/* Selected bottle summary */}
-              {selectedBottle && (
+              {/* Selected perfume summary */}
+              {selectedPerfume && (
                 <div className="bg-muted/30 rounded-lg p-4 border border-border/50">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-gold/10 flex items-center justify-center">
                       <Wine className="w-5 h-5 text-gold" />
                     </div>
                     <div>
-                      <p className="text-sm font-bold">{selectedBottle._name}</p>
-                      <p className="text-[10px] font-mono text-muted-foreground">{selectedBottle.bottle_id} · {selectedBottle._type} · {selectedBottle.size_ml}ml</p>
+                      <p className="text-sm font-bold">{selectedPerfume._name}</p>
+                      <p className="text-[10px] font-mono text-muted-foreground">{selectedPerfume.master_id}</p>
                     </div>
                   </div>
                 </div>
@@ -810,7 +797,7 @@ function AddBottleToLocationDialog({
           )}
 
           {/* Step 3: Confirm */}
-          {step === 'confirm' && selectedBottle && (selectedLocation || nextAvailableLocation) && (
+          {step === 'confirm' && selectedPerfume && (selectedLocation || nextAvailableLocation) && (
             <div className="space-y-4">
               <div className="bg-muted/20 rounded-xl border border-border overflow-hidden">
                 <div className="px-5 py-3 bg-muted/30 border-b border-border">
@@ -820,29 +807,10 @@ function AddBottleToLocationDialog({
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Perfume</p>
-                      <p className="text-sm font-bold mt-1">{selectedBottle._name}</p>
-                      <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{selectedBottle.master_id}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Bottle ID</p>
-                      <p className="text-sm font-mono font-bold mt-1">{selectedBottle.bottle_id}</p>
-                      <StatusBadge variant={selectedBottle._type === 'sealed' ? 'info' : 'gold'}>
-                        {selectedBottle._type} · {selectedBottle.size_ml}ml
-                      </StatusBadge>
+                      <p className="text-sm font-bold mt-1">{selectedPerfume._name}</p>
+                      <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{selectedPerfume.master_id}</p>
                     </div>
                   </div>
-                  {'purchase_price' in selectedBottle && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Purchase Price</p>
-                        <p className="text-sm font-mono font-bold mt-1">AED {(selectedBottle as InventoryBottle).purchase_price}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Status</p>
-                        <p className="text-sm font-bold mt-1">{(selectedBottle as InventoryBottle).status}</p>
-                      </div>
-                    </div>
-                  )}
                   <div className="pt-3 border-t border-border/50">
                     <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Assigned Location</p>
                     <div className="flex items-center gap-3 mt-2">
@@ -865,7 +833,7 @@ function AddBottleToLocationDialog({
                 <div>
                   <p className="text-xs font-semibold text-gold">Ready to Assign</p>
                   <p className="text-[10px] text-muted-foreground mt-0.5">
-                    This will assign the existing bottle to the selected vault location and update the location code on the bottle record.
+                    This will assign the perfume to the selected vault location.
                   </p>
                 </div>
               </div>
@@ -890,7 +858,7 @@ function AddBottleToLocationDialog({
             <Button variant="outline" onClick={onClose}>Cancel</Button>
             {step === 'bottle' && (
               <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5"
-                disabled={!selectedBottle}
+                disabled={!selectedPerfume}
                 onClick={handleGoToLocation}>
                 Next <ChevronRight className="w-3.5 h-3.5" />
               </Button>
@@ -906,11 +874,10 @@ function AddBottleToLocationDialog({
               <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5"
                 onClick={() => {
                   const loc = selectedLocation || nextAvailableLocation;
-                  if (selectedBottle && loc) {
+                  if (selectedPerfume && loc) {
                     onComplete({
-                      bottle: selectedBottle,
-                      bottleType: selectedBottle._type,
-                      locationId: loc.location_id,
+                      perfume: selectedPerfume,
+                      locationId: loc.id || loc.location_id,
                       locationCode: loc.location_code,
                     });
                     onClose();
@@ -928,10 +895,10 @@ function AddBottleToLocationDialog({
 
 // ---- CSV Export ----
 function exportLocationsCsv(locations: VaultLocation[]) {
-  const headers = ['Location Code', 'Vault', 'Zone', 'Shelf', 'Slot', 'Type', 'Occupied', 'Bottle ID', 'Master ID', 'Perfume Name'];
+  const headers = ['Location Code', 'Vault', 'Zone', 'Shelf', 'Slot', 'Type', 'Occupied', 'Master ID', 'Perfume Name'];
   const rows = locations.map(l => [
     l.location_code, l.vault, l.zone, l.shelf, l.slot, l.type,
-    l.occupied ? 'Yes' : 'No', l.bottle_id || '', l.master_id || '', l.perfume_name || '',
+    l.occupied ? 'Yes' : 'No', l.master_id || '', l.perfume_name || '',
   ]);
   const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -965,8 +932,7 @@ export default function VaultLocationsPage() {
         const q = searchTerm.toLowerCase();
         return l.location_code.toLowerCase().includes(q) ||
           (l.perfume_name || '').toLowerCase().includes(q) ||
-          (l.master_id || '').toLowerCase().includes(q) ||
-          (l.bottle_id || '').toLowerCase().includes(q);
+          (l.master_id || '').toLowerCase().includes(q);
       }
       return true;
     });
@@ -1013,21 +979,18 @@ export default function VaultLocationsPage() {
     });
   }, [createLocation]);
 
-  const handleAssignBottle = useCallback((locId: string, bottleId: string, masterId: string, perfumeName: string) => {
+  const handleAssignBottle = useCallback((locId: string, masterId: string, perfumeName: string) => {
     const resolvedId = resolveLocationMutationId(locId);
     if (!resolvedId) {
-      toast.error('Unable to assign bottle: invalid location ID');
+      toast.error('Unable to assign perfume: invalid location ID');
       return;
     }
 
     updateLocation.mutate({
       id: resolvedId,
-      data: { occupied: true, bottle_id: bottleId, master_id: masterId, perfume_name: perfumeName }
+      data: { occupied: true, master_id: masterId, perfume_name: perfumeName }
     }, {
       onSuccess: () => {
-        // Also update the bottle's location_code in the DB
-        const locationCode = locations.find((l) => l.id === resolvedId)?.location_code || '';
-        api.mutations.bottles.update(bottleId, { locationCode }).catch(() => {});
         setSelectedSlot(null);
       }
     });
@@ -1072,26 +1035,29 @@ export default function VaultLocationsPage() {
   }, [locations]);
 
   const handleAddBottleComplete = useCallback((data: {
-    bottle: InventoryBottle | DecantBottle;
-    bottleType: 'sealed' | 'decant';
+    perfume: SearchablePerfume;
     locationId: string;
     locationCode: string;
   }) => {
+    const resolvedId = resolveLocationMutationId(data.locationId);
+    if (!resolvedId) {
+      toast.error('Unable to assign perfume: invalid location ID');
+      return;
+    }
+
     updateLocation.mutate({
-      id: data.locationId,
+      id: resolvedId,
       data: {
         occupied: true,
-        bottle_id: data.bottle.bottle_id,
-        master_id: data.bottle.master_id,
-        perfume_name: getPerfumeName(data.bottle.master_id),
+        master_id: data.perfume.master_id,
+        perfume_name: data.perfume._name,
       }
     }, {
       onSuccess: () => {
-        api.mutations.bottles.update(data.bottle.bottle_id, { locationCode: data.locationCode }).catch(() => {});
         setShowAddBottle(false);
       }
     });
-  }, [updateLocation]);
+  }, [updateLocation, resolveLocationMutationId]);
 
   // Stats per vault
   const vaultStats = useMemo(() => {
@@ -1104,28 +1070,80 @@ export default function VaultLocationsPage() {
     return stats;
   }, [locations]);
 
+  const headerActions = (
+    <div className="flex items-center gap-2">
+      <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleAutoAssign}>
+        <ArrowRight className="w-3.5 h-3.5" /> Auto-Assign Next
+      </Button>
+      <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => exportLocationsCsv(locations)}>
+        <Download className="w-3.5 h-3.5" /> CSV
+      </Button>
+      <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowAddZone(true)}>
+        <Plus className="w-3.5 h-3.5" /> Add Zone
+      </Button>
+      <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={() => setShowAddBottle(true)}>
+        <MapPin className="w-3.5 h-3.5" /> Assign Perfume
+      </Button>
+    </div>
+  );
+
+  if (locationsQuery.isLoading) {
+    return (
+      <div>
+        <PageHeader
+          title="Vault Locations"
+          subtitle="Loading vault locations..."
+          breadcrumbs={[{ label: 'Master Data' }, { label: 'Vault Locations' }]}
+          actions={headerActions}
+        />
+        <div className="p-6">
+          <SectionCard title="">
+            <div className="py-16 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+              <Loader2 className="w-6 h-6 animate-spin" />
+              <p className="text-sm">Fetching vault locations...</p>
+            </div>
+          </SectionCard>
+        </div>
+      </div>
+    );
+  }
+
+  if (locationsQuery.isError) {
+    const message = locationsQuery.error instanceof Error
+      ? locationsQuery.error.message
+      : 'Unable to load vault locations.';
+
+    return (
+      <div>
+        <PageHeader
+          title="Vault Locations"
+          subtitle="Could not load vault locations"
+          breadcrumbs={[{ label: 'Master Data' }, { label: 'Vault Locations' }]}
+          actions={headerActions}
+        />
+        <div className="p-6">
+          <SectionCard title="">
+            <div className="py-12 flex flex-col items-center justify-center gap-3 text-center">
+              <AlertTriangle className="w-6 h-6 text-warning" />
+              <p className="text-sm font-medium text-foreground">Vault locations failed to load</p>
+              <p className="text-xs text-muted-foreground max-w-md">{message}</p>
+              <Button size="sm" variant="outline" onClick={() => locationsQuery.refetch()}>
+                Retry
+              </Button>
+            </div>
+          </SectionCard>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <PageHeader
         title="Vault Locations"
         subtitle={`${totalSlots} slots across ${zones.length} zones — ${occupancyRate}% occupancy`}
         breadcrumbs={[{ label: 'Master Data' }, { label: 'Vault Locations' }]}
-        actions={
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleAutoAssign}>
-              <ArrowRight className="w-3.5 h-3.5" /> Auto-Assign Next
-            </Button>
-            <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => exportLocationsCsv(locations)}>
-              <Download className="w-3.5 h-3.5" /> CSV
-            </Button>
-            <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowAddZone(true)}>
-              <Plus className="w-3.5 h-3.5" /> Add Zone
-            </Button>
-            <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={() => setShowAddBottle(true)}>
-              <MapPin className="w-3.5 h-3.5" /> Assign Bottle
-            </Button>
-          </div>
-        }
+        actions={headerActions}
       />
 
       <div className="p-6 space-y-6">
@@ -1166,7 +1184,7 @@ export default function VaultLocationsPage() {
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Search location, perfume, bottle ID..."
+              placeholder="Search location, perfume, master ID..."
               className="pl-9 scan-input" />
           </div>
           <div className="flex items-center gap-1.5">
@@ -1303,7 +1321,7 @@ export default function VaultLocationsPage() {
                         {l.occupied ? (
                           <div>
                             <p className="text-sm font-medium">{l.perfume_name}</p>
-                            <p className="text-[10px] font-mono text-muted-foreground">{l.bottle_id}</p>
+                            <p className="text-[10px] font-mono text-muted-foreground">{l.master_id}</p>
                           </div>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
@@ -1330,7 +1348,7 @@ export default function VaultLocationsPage() {
         <AddZoneDialog onAdd={handleAddZone} onClose={() => setShowAddZone(false)} existingZones={zones} isCreating={createLocation.isPending} />
       )}
       {selectedSlot && (
-        <AssignBottleDialog
+        <AssignPerfumeDialog
           location={selectedSlot}
           onAssign={handleAssignBottle}
           onClear={handleClearSlot}

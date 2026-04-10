@@ -67,6 +67,7 @@ const STEPS = [
 
 // ---- Form state type ----
 interface FormState {
+  brand_id: string;
   brand: string;
   name: string;
   concentration: Concentration | '';
@@ -103,6 +104,7 @@ interface FormState {
 }
 
 const INITIAL_STATE: FormState = {
+  brand_id: '',
   brand: '',
   name: '',
   concentration: '',
@@ -175,6 +177,7 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
 
   // Build initial state from editPerfume if provided
   const editInitialState: FormState | null = editPerfume ? {
+    brand_id: editPerfume.brand_id || '',
     brand: editPerfume.brand || '',
     name: editPerfume.name || '',
     concentration: (editPerfume.concentration || '') as FormState['concentration'],
@@ -328,6 +331,7 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
   const selectBrand = useCallback((brand: Brand) => {
     setForm(prev => ({
       ...prev,
+      brand_id: brand.brand_id,
       brand: brand.name,
       made_in: brand.made_in || prev.made_in,
     }));
@@ -335,10 +339,19 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
     setShowBrandDropdown(false);
   }, []);
 
+  useEffect(() => {
+    if (!form.brand_id && form.brand && brands.length > 0) {
+      const match = brands.find(b => b.name.toLowerCase() === form.brand.toLowerCase());
+      if (match) {
+        setForm(prev => ({ ...prev, brand_id: match.brand_id }));
+      }
+    }
+  }, [brands, form.brand, form.brand_id]);
+
   // Step validation
   const stepValid = useMemo(() => {
     switch (step) {
-      case 0: return !!form.brand && !!form.name && !!form.concentration && !!form.gender_target;
+      case 0: return !!form.brand_id && !!form.brand && !!form.name && !!form.concentration && !!form.gender_target;
       case 1: return !!form.aura_color && !!form.hype_level && !!form.scent_type;
       case 2: return !!form.notes_top && !!form.notes_heart && !!form.notes_base;
       case 3: return !!form.wholesale_price && !!form.reference_size_ml;
@@ -381,6 +394,7 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
 
     const perfume: Perfume = {
       master_id: masterId,
+      brand_id: form.brand_id || undefined,
       brand: form.brand,
       name: form.name,
       concentration: form.concentration as Concentration,
@@ -497,6 +511,7 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
                       onChange={e => {
                         setBrandSearch(e.target.value);
                         update('brand', e.target.value);
+                        update('brand_id', '');
                         update('made_in', '');
                         setShowBrandDropdown(true);
                       }}

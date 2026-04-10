@@ -1,10 +1,11 @@
 import type {
-  ApiResponse, ApiListResponse, Perfume, AuraDefinition, Family, SubFamily,
+  ApiResponse, ApiListResponse, Perfume, PerfumeSearchResult, AuraDefinition, Family, SubFamily,
   VaultLocation, Supplier, Syringe, PackagingSKU, SealedBottle, DecantBottle,
   PackagingStock, Order, Job, SubscriptionCycle, PrintJob, DashboardKPIs,
   InventoryAlert, CriticalPerfume,
   User, BottleLedgerEvent, DecantLedgerEvent, ActivityEvent,
   BatchDecantItem, PackagingPickItem, PipelineStage,
+  BrandInsights,
 } from '@/types';
 import * as mock from './mock-data';
 import {
@@ -21,7 +22,7 @@ import {
   mapPerfume, mapBrand, mapSupplier, mapSyringe, mapPackagingSku,
   mapVaultLocation, mapInventoryBottle, mapDecantBottle, mapOrder,
   mapJob, mapBottleLedgerEvent, mapDecantLedgerEvent, mapSubscriptionCycle,
-  mapPrintJob, mapAlert,
+  mapPrintJob, mapAlert, syringeToDb,
 } from './data-mappers';
 
 // ============================================================
@@ -390,6 +391,15 @@ export const api = {
         return wrapList(mock.mockPerfumes);
       }
     },
+    perfumesByBrand: async (brandId: string) => {
+      const res = await apiGet<any>(`/perfumes?brandId=${encodeURIComponent(brandId)}`);
+      const items = Array.isArray(res) ? res : res.data || [];
+      return wrapList(items.map(mapPerfume));
+    },
+    brandInsights: async (brandId: string) => {
+      const res = await apiGet<BrandInsights>(`/perfumes/insights?brandId=${encodeURIComponent(brandId)}`);
+      return wrapOne(res);
+    },
     notes: {
       list: async () => {
         const res = await apiGet<any>('/notes');
@@ -477,14 +487,36 @@ export const api = {
         }
       },
     },
-    locations: {
-      list: async () => wrapList([]),
+    locations: async () => {
+      try {
+        const rows = await apiGet<any[]>('/inventory/locations');
+        return wrapList(rows.map(mapVaultLocation));
+      } catch {
+        return wrapList([]);
+      }
     },
-    suppliers: {
-      list: async () => wrapList([]),
+    packagingSKUs: async () => {
+      try {
+        const res = await apiGet<any>('/packaging-skus');
+        const items = normalizeList(res);
+        return wrapList(items.map(mapPackagingSku));
+      } catch {
+        return wrapList(mock.mockPackagingSKUs ?? []);
+      }
     },
-    syringes: {
-      list: async () => wrapList([]),
+    suppliers: async () => {
+      try {
+        const res = await apiGet<any>('/suppliers');
+        const items = normalizeList(res);
+        return wrapList(items.map(mapSupplier));
+      } catch {
+        return wrapList([]);
+      }
+    },
+    syringes: async () => {
+      const res = await apiGet<any>('/syringes');
+      const items = normalizeList(res);
+      return wrapList(items.map(mapSyringe));
     },
     pricing: {
       list: async () => wrapList([]),
@@ -585,7 +617,14 @@ export const api = {
     delete: async (id: string) => apiDelete(`/taxonomies/sub-families/${id}`),
   },
   locations: {
-    list: async () => wrapList([]),
+    list: async () => {
+      try {
+        const rows = await apiGet<any[]>('/inventory/locations');
+        return wrapList(rows.map(mapVaultLocation));
+      } catch {
+        return wrapList([]);
+      }
+    },
     create: async (d: any) => wrapOne(d),
     update: async (id: string, d: any) => wrapOne(d),
     delete: async (id: string) => wrapOne({ id }),
@@ -598,10 +637,25 @@ export const api = {
     delete: async (id: string) => wrapOne({ id }),
   },
   syringes: {
-    list: async () => wrapList([]),
-    create: async (d: any) => wrapOne(d),
-    update: async (id: string, d: any) => wrapOne(d),
-    delete: async (id: string) => wrapOne({ id }),
+    list: async () => {
+      const res = await apiGet<any>('/syringes');
+      const items = normalizeList(res);
+      return wrapList(items.map(mapSyringe));
+    },
+    create: async (d: any) => {
+      const res = await apiPost<any>('/syringes', syringeToDb(d));
+      return wrapOne(mapSyringe(res));
+    },
+    update: async (id: string, d: any) => {
+      // Use d.id if available (UUID), otherwise fallback to the passed id
+      const targetId = d.id || id;
+      const res = await apiPatch<any>(`/syringes/${encodeURIComponent(targetId)}`, syringeToDb(d));
+      return wrapOne(mapSyringe(res));
+    },
+    delete: async (id: string) => {
+      await apiDelete(`/syringes/${encodeURIComponent(id)}`);
+      return wrapOne({ id });
+    },
   },
   pricing: {
     list: async () => wrapList([]),
@@ -638,6 +692,10 @@ export const api = {
         return wrapList(mock.mockPerfumes);
       }
     },
+    search: async (query: string) => {
+      const res = await apiGet<PerfumeSearchResult[]>(`/perfumes/search?query=${encodeURIComponent(query)}`);
+      return Array.isArray(res) ? res : [];
+    },
     get: async (id: string) => {
       const res = await apiGet<any>(`/perfumes/${id}`);
       return wrapOne(mapPerfume(res));
@@ -649,30 +707,21 @@ export const api = {
 
   // ---- Production & Inventory ----
   inventory: {
-    bottles: {
-      list: async () => wrapList([]),
-      create: async (d: any) => wrapOne(d),
-      update: async (id: string, d: any) => wrapOne(d),
-      delete: async (id: string) => wrapOne({ id }),
+    sealedBottles: async () => {
+      try {
+        const rows = await apiGet<any[]>('/inventory/sealed-bottles');
+        return wrapList(rows.map(mapInventoryBottle));
+      } catch {
+        return wrapList(mock.mockInventoryBottles);
+      }
     },
-    syringes: {
-      list: async () => wrapList([]),
-      create: async (d: any) => wrapOne(d),
-    },
-    packaging: {
-      list: async () => {
-        try {
-          const rows = await apiGet<any[]>('/inventory/packaging');
-          return wrapOne(rows);
-        } catch {
-          return wrapOne([]);
-        }
-      },
-    },
-    decantBottles: {
-      list: async () => wrapList([]),
-      create: async (d: any) => wrapOne(d),
-      update: async (id: string, d: any) => wrapOne(d),
+    decantBottles: async () => {
+      try {
+        const rows = await apiGet<any[]>('/inventory/decant-bottles');
+        return wrapList(rows.map(mapDecantBottle));
+      } catch {
+        return wrapList(mock.mockDecantBottles);
+      }
     },
     reconciliation: {
       list: async () => wrapList([]),
@@ -961,9 +1010,19 @@ export const api = {
       update: (id: string, d: any) => apiPut(`/inventory/decant-bottles/${id}`, d),
     },
     syringes: {
-      create: (d: any) => apiPost('/syringes', d),
-      update: (id: string, d: any) => apiPut(`/syringes/${id}`, d),
-      delete: (id: string) => apiDelete(`/syringes/${id}`),
+      create: async (d: any) => {
+        const res = await apiPost<any>('/syringes', syringeToDb(d));
+        return wrapOne(mapSyringe(res));
+      },
+      update: async (id: string, d: any) => {
+        const targetId = d.id || id;
+        const res = await apiPatch<any>(`/syringes/${encodeURIComponent(targetId)}`, syringeToDb(d));
+        return wrapOne(mapSyringe(res));
+      },
+      delete: async (id: string) => {
+        await apiDelete(`/syringes/${encodeURIComponent(id)}`);
+        return wrapOne({ id });
+      },
     },
     locations: {
       create: (d: any) => apiPost('/inventory/locations', d),
@@ -1007,8 +1066,15 @@ export const api = {
     },
     packagingSkus: {
       create: (d: any) => apiPost('/packaging-skus', d),
+      bulkCreate: (items: any[]) => apiPost('/packaging-skus/bulk', items),
       update: (id: string, d: any) => apiPatch(`/packaging-skus/${encodeURIComponent(id)}`, d),
       delete: (id: string) => apiDelete(`/packaging-skus/${encodeURIComponent(id)}`),
+      getSuppliers: async (skuId: string) => {
+        const res = await apiGet<any>(
+          `/packaging-sku-suppliers?skuId=${encodeURIComponent(skuId)}`
+        );
+        return normalizeList(res);
+      },
       linkSupplier: (d: any) => apiPost('/packaging-sku-suppliers', d),
       unlinkSupplier: (skuId: string, supplierId: string) => apiDelete(`/packaging-sku-suppliers?skuId=${encodeURIComponent(skuId)}&supplierId=${encodeURIComponent(supplierId)}`),
     },

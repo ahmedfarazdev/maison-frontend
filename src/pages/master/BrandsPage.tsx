@@ -4,10 +4,11 @@
 // Grid/Row view toggle + brand logo upload
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { useBrands } from '@/hooks/useBrands';
-import { PageHeader, StatusBadge } from '@/components/shared';
-import { lookupBrandMadeIn } from '@/lib/mock-brands';
-import { mockPerfumes, mockAuras } from '@/lib/mock-data';
-import type { Brand, Perfume, AuraColor } from '@/types';
+import { useApiQuery } from '@/hooks/useApiQuery';
+import { PageHeader } from '@/components/shared';
+import { api } from '@/lib/api-client';
+import type { Brand, BrandInsights, Perfume, AuraColor } from '@/types';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -27,7 +28,7 @@ import {
 import {
   Building2, Plus, Search, MapPin, Edit2, Check, X, ArrowLeft,
   Package, FlaskConical, ChevronRight, SortAsc, SortDesc, Download,
-  TrendingUp, BarChart3, PieChart as PieChartIcon, Eye,
+  BarChart3, Eye,
   LayoutGrid, List, Upload, ImageIcon, Loader2, Trash2,
 } from 'lucide-react';
 
@@ -103,9 +104,11 @@ function BrandLogoUpload({ currentUrl, onUpload }: { currentUrl?: string; onUplo
 }
 
 // ---- Brand Detail with Analytics ----
-function BrandDetail({ brand, perfumes, onBack, onEdit, onDelete, isDeleting }: {
+function BrandDetail({ brand, perfumes, insights, isLoading, onBack, onEdit, onDelete, isDeleting }: {
   brand: Brand;
   perfumes: Perfume[];
+  insights?: BrandInsights | null;
+  isLoading?: boolean;
   onBack: () => void;
   onEdit: (b: Brand) => void;
   onDelete: (id: string) => void;
@@ -113,8 +116,18 @@ function BrandDetail({ brand, perfumes, onBack, onEdit, onDelete, isDeleting }: 
 }) {
   const { hasRole, hasPermission } = useAuth();
   const canDelete = hasRole('owner') || hasRole('admin') || hasPermission('master_data.write');
-  const brandPerfumes = perfumes.filter(p => p.brand.toLowerCase() === brand.name.toLowerCase());
-  const inStock = brandPerfumes.filter(p => p.in_stock).length;
+  const brandPerfumes = perfumes.filter(p =>
+    (p.brand_id && p.brand_id === brand.brand_id)
+    || (!p.brand_id && p.brand.toLowerCase() === brand.name.toLowerCase())
+  );
+  const totalPerfumes = insights?.totals.totalPerfumes ?? brandPerfumes.length;
+  const inStock = insights?.totals.inStock ?? brandPerfumes.filter(p => p.in_stock).length;
+  const outOfStock = insights?.totals.outOfStock ?? (totalPerfumes - inStock);
+  const hasPerfumes = totalPerfumes > 0;
+  const deleteBlocked = Boolean(isLoading) || hasPerfumes;
+  const deleteDisabledReason = isLoading
+    ? 'Checking perfumes for this brand...'
+    : 'Cannot delete a brand with perfumes attached.';
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(brand.name);
   const [editMadeIn, setEditMadeIn] = useState(brand.made_in);
@@ -130,24 +143,46 @@ function BrandDetail({ brand, perfumes, onBack, onEdit, onDelete, isDeleting }: 
 
   // Analytics data
   const concentrationData = useMemo(() => {
+    if (insights?.concentrationDistribution?.length) {
+      return insights.concentrationDistribution.map((entry) => ({
+        ...entry,
+        fill: CONC_COLORS[entry.name] || '#888',
+      }));
+    }
     const counts: Record<string, number> = {};
     brandPerfumes.forEach(p => { counts[p.concentration] = (counts[p.concentration] || 0) + 1; });
     return Object.entries(counts).map(([name, value]) => ({ name, value, fill: CONC_COLORS[name] || '#888' }));
-  }, [brandPerfumes]);
+  }, [brandPerfumes, insights]);
 
   const auraData = useMemo(() => {
+    if (insights?.auraDistribution?.length) {
+      return insights.auraDistribution.map((entry) => ({
+        ...entry,
+        fill: AURA_HEX[entry.name as AuraColor] || '#888',
+      }));
+    }
     const counts: Record<string, number> = {};
     brandPerfumes.forEach(p => { if (p.aura_color) counts[p.aura_color] = (counts[p.aura_color] || 0) + 1; });
     return Object.entries(counts).map(([name, value]) => ({ name, value, fill: AURA_HEX[name as AuraColor] || '#888' }));
-  }, [brandPerfumes]);
+  }, [brandPerfumes, insights]);
 
   const hypeData = useMemo(() => {
+    if (insights?.hypeDistribution?.length) {
+      return insights.hypeDistribution;
+    }
     const counts: Record<string, number> = {};
     brandPerfumes.forEach(p => { counts[p.hype_level || 'Medium'] = (counts[p.hype_level || 'Medium'] || 0) + 1; });
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [brandPerfumes]);
+  }, [brandPerfumes, insights]);
 
   const priceData = useMemo(() => {
+    if (insights?.topPricePerMl?.length) {
+      return insights.topPricePerMl.map(p => ({
+        name: p.name.length > 15 ? p.name.slice(0, 15) + '…' : p.name,
+        price_per_ml: Math.round(p.pricePerMl * 100) / 100,
+        retail: p.retailPrice,
+      }));
+    }
     return brandPerfumes
       .filter(p => p.price_per_ml > 0)
       .sort((a, b) => b.price_per_ml - a.price_per_ml)
@@ -157,13 +192,15 @@ function BrandDetail({ brand, perfumes, onBack, onEdit, onDelete, isDeleting }: 
         price_per_ml: Math.round(p.price_per_ml * 100) / 100,
         retail: p.retail_price,
       }));
-  }, [brandPerfumes]);
+  }, [brandPerfumes, insights]);
 
-  const avgPrice = brandPerfumes.length > 0
-    ? Math.round(brandPerfumes.reduce((s, p) => s + p.price_per_ml, 0) / brandPerfumes.length * 100) / 100
-    : 0;
+  const avgPrice = insights?.pricing.avgPricePerMl
+    ?? (brandPerfumes.length > 0
+      ? Math.round(brandPerfumes.reduce((s, p) => s + p.price_per_ml, 0) / brandPerfumes.length * 100) / 100
+      : 0);
 
-  const totalRetail = brandPerfumes.reduce((s, p) => s + p.retail_price, 0);
+  const totalRetail = insights?.pricing.totalRetailValue
+    ?? brandPerfumes.reduce((s, p) => s + p.retail_price, 0);
 
   // Export brand perfumes
   const handleExportPerfumes = () => {
@@ -221,7 +258,12 @@ function BrandDetail({ brand, perfumes, onBack, onEdit, onDelete, isDeleting }: 
                 {canDelete && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button size="sm" variant="destructive" disabled={isDeleting}>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={isDeleting || deleteBlocked}
+                        title={deleteBlocked ? deleteDisabledReason : undefined}
+                      >
                         {isDeleting ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
                         {isDeleting ? 'Deleting...' : 'Delete'}
                       </Button>
@@ -241,7 +283,7 @@ function BrandDetail({ brand, perfumes, onBack, onEdit, onDelete, isDeleting }: 
                             onDelete(brand.id || brand.brand_id);
                           }}
                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          disabled={isDeleting}
+                          disabled={isDeleting || deleteBlocked}
                         >
                           {isDeleting ? 'Deleting...' : 'Yes, Delete'}
                         </AlertDialogAction>
@@ -272,7 +314,7 @@ function BrandDetail({ brand, perfumes, onBack, onEdit, onDelete, isDeleting }: 
         {/* Stats */}
         <div className="grid grid-cols-5 gap-3 mt-6">
           <div className="bg-muted/50 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold">{brandPerfumes.length}</div>
+            <div className="text-2xl font-bold">{totalPerfumes}</div>
             <div className="text-xs text-muted-foreground mt-1">Total Perfumes</div>
           </div>
           <div className="bg-muted/50 rounded-lg p-4 text-center">
@@ -280,7 +322,7 @@ function BrandDetail({ brand, perfumes, onBack, onEdit, onDelete, isDeleting }: 
             <div className="text-xs text-muted-foreground mt-1">In Stock</div>
           </div>
           <div className="bg-muted/50 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-amber-600">{brandPerfumes.length - inStock}</div>
+            <div className="text-2xl font-bold text-amber-600">{outOfStock}</div>
             <div className="text-xs text-muted-foreground mt-1">Out of Stock</div>
           </div>
           <div className="bg-muted/50 rounded-lg p-4 text-center">
@@ -306,7 +348,12 @@ function BrandDetail({ brand, perfumes, onBack, onEdit, onDelete, isDeleting }: 
           <Eye className={`w-4 h-4 text-muted-foreground transition-transform ${showAnalytics ? '' : 'rotate-180'}`} />
         </button>
 
-        {showAnalytics && brandPerfumes.length > 0 && (
+        {showAnalytics && isLoading && (
+          <div className="px-6 pb-6 text-sm text-muted-foreground">
+            Loading brand analytics...
+          </div>
+        )}
+        {showAnalytics && !isLoading && totalPerfumes > 0 && (
           <div className="px-6 pb-6 space-y-6">
             {/* Charts Row */}
             <div className="grid grid-cols-2 gap-6">
@@ -388,9 +435,14 @@ function BrandDetail({ brand, perfumes, onBack, onEdit, onDelete, isDeleting }: 
       {/* Perfumes List */}
       <div className="bg-card border border-border rounded-lg p-6">
         <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-          <FlaskConical className="w-4 h-4 text-amber-600" /> Perfumes ({brandPerfumes.length})
+          <FlaskConical className="w-4 h-4 text-amber-600" /> Perfumes ({totalPerfumes})
         </h3>
-        {brandPerfumes.length === 0 ? (
+        {isLoading ? (
+          <div className="bg-muted/30 rounded-lg p-8 text-center text-muted-foreground">
+            <Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin" />
+            <p className="text-sm">Loading perfumes for this brand...</p>
+          </div>
+        ) : brandPerfumes.length === 0 ? (
           <div className="bg-muted/30 rounded-lg p-8 text-center text-muted-foreground">
             <Package className="w-8 h-8 mx-auto mb-2 opacity-50" />
             <p className="text-sm">No perfumes registered for this brand yet</p>
@@ -500,6 +552,28 @@ export default function BrandsPage() {
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const { data: perfumesRes } = useApiQuery<any>(() => api.master.perfumes(), []);
+  const allPerfumes = (perfumesRes || []) as Perfume[];
+
+  const selectedBrandId = selectedBrand?.brand_id;
+  const brandPerfumesQuery = useQuery({
+    queryKey: ['brand-perfumes', selectedBrandId],
+    enabled: !!selectedBrandId,
+    queryFn: async () => {
+      if (!selectedBrandId) return [] as Perfume[];
+      const res = await api.master.perfumesByBrand(selectedBrandId);
+      return res.data as Perfume[];
+    },
+  });
+  const brandInsightsQuery = useQuery({
+    queryKey: ['brand-insights', selectedBrandId],
+    enabled: !!selectedBrandId,
+    queryFn: async () => {
+      if (!selectedBrandId) return null;
+      const res = await api.master.brandInsights(selectedBrandId);
+      return res.data as BrandInsights;
+    },
+  });
 
   const countries = useMemo(() => {
     const set = new Set(brands.map(b => b.made_in).filter(Boolean));
@@ -509,23 +583,26 @@ export default function BrandsPage() {
   const brandStats = useMemo(() => {
     const map: Record<string, { total: number; in_stock: number }> = {};
     for (const b of brands) {
-      const matching = mockPerfumes.filter(p => p.brand.toLowerCase() === b.name.toLowerCase());
+      const matching = allPerfumes.filter(p =>
+        (p.brand_id && p.brand_id === b.brand_id)
+        || (!p.brand_id && p.brand.toLowerCase() === b.name.toLowerCase())
+      );
       map[b.brand_id] = { total: matching.length, in_stock: matching.filter(p => p.in_stock).length };
     }
     return map;
-  }, [brands]);
+  }, [brands, allPerfumes]);
 
   const filtered = useMemo(() => {
     let list = brands.filter(b => b.active);
     if (search) {
       const q = search.toLowerCase();
-      list = list.filter(b => b.name.toLowerCase().includes(q) || b.made_in.toLowerCase().includes(q));
+      list = list.filter(b => b.name.toLowerCase().includes(q) || (b.made_in || '').toLowerCase().includes(q));
     }
     if (countryFilter) list = list.filter(b => b.made_in === countryFilter);
     list.sort((a, b) => {
       let cmp = 0;
       if (sortField === 'name') cmp = a.name.localeCompare(b.name);
-      else if (sortField === 'made_in') cmp = a.made_in.localeCompare(b.made_in);
+      else if (sortField === 'made_in') cmp = (a.made_in || '').localeCompare(b.made_in || '');
       else if (sortField === 'perfumes') cmp = (brandStats[a.brand_id]?.total || 0) - (brandStats[b.brand_id]?.total || 0);
       else if (sortField === 'in_stock') cmp = (brandStats[a.brand_id]?.in_stock || 0) - (brandStats[b.brand_id]?.in_stock || 0);
       return sortDir === 'asc' ? cmp : -cmp;
@@ -573,7 +650,9 @@ export default function BrandsPage() {
       <div className="p-6 max-w-5xl">
         <BrandDetail 
           brand={selectedBrand} 
-          perfumes={mockPerfumes} 
+          perfumes={(brandPerfumesQuery.data || []) as Perfume[]} 
+          insights={brandInsightsQuery.data as BrandInsights | null}
+          isLoading={brandPerfumesQuery.isLoading || brandInsightsQuery.isLoading}
           onBack={() => setSelectedBrand(null)} 
           onEdit={handleEditBrand}
           isDeleting={removeBrand.isPending}

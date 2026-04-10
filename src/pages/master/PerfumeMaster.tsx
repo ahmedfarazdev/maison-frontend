@@ -22,7 +22,7 @@ import type { Perfume, AuraColor, Syringe, InventoryBottle, DecantBottle } from 
 import AddPerfumeForm from '@/components/master/AddPerfumeForm';
 import BulkCsvUpload from '@/components/master/BulkCsvUpload';
 import PricingCalculator from '@/components/master/PricingCalculator';
-import { mockBrands } from '@/lib/mock-brands';
+import { useBrands } from '@/hooks/useBrands';
 import { useTaxonomies } from '@/hooks/useTaxonomies';
 import { useSyringes } from '@/hooks/useSyringes';
 
@@ -98,6 +98,7 @@ export default function PerfumeMaster() {
   const { data: perfumesRes } = useApiQuery(() => api.master.perfumes(), []);
   const { data: bottlesRes } = useApiQuery(() => api.inventory.sealedBottles(), []);
   const { data: decantRes } = useApiQuery(() => api.inventory.decantBottles(), []);
+  const { brands } = useBrands();
 
   const { familiesQuery, subFamiliesQuery, aurasQuery } = useTaxonomies();
   const { syringesQuery } = useSyringes();
@@ -186,11 +187,25 @@ export default function PerfumeMaster() {
 
   const queryClient = useQueryClient();
 
+  const getSyringeSequence = (syringe: Syringe) => {
+    if (Number.isFinite(syringe.sequence_number)) {
+      return syringe.sequence_number as number;
+    }
+    if (syringe.syringe_id) {
+      const match = syringe.syringe_id.match(/S\/(\d+)/i);
+      if (match) {
+        return Number(match[1]);
+      }
+    }
+    return 0;
+  };
+
   const addPerfumeMutation = useMutation({
     mutationFn: async (perfume: Perfume) => {
       // 1. Create Perfume
       await api.mutations.perfumes.create({
         masterId: perfume.master_id,
+        brandId: perfume.brand_id || null,
         brand: perfume.brand,
         name: perfume.name,
         concentration: perfume.concentration,
@@ -229,13 +244,28 @@ export default function PerfumeMaster() {
       });
 
       // 2. Determine robust Syringe ID (max sequence + 1 to avoid collisions)
-      const currentSyringes = syringesQuery.data || [];
-      const maxSeq = currentSyringes.reduce((max, s) => Math.max(max, s.sequence_number || 0), 0);
+      const refetchResult = await syringesQuery.refetch();
+      const currentSyringes = refetchResult.data ?? syringesQuery.data ?? [];
+      const syringeListError = refetchResult.error instanceof Error
+        ? refetchResult.error.message
+        : null;
+
+      if (!currentSyringes.length && syringeListError) {
+        return {
+          perfume,
+          syringeId: undefined,
+          syringeCreated: false,
+          syringeError: `Unable to load syringes list: ${syringeListError}`,
+        };
+      }
+
+      const maxSeq = currentSyringes.reduce((max, s) => Math.max(max, getSyringeSequence(s)), 0);
       const nextSeq = maxSeq + 1;
       const syringeId = `S/${nextSeq}`;
 
       // 3. Attempt to create syringe for this perfume
       let syringeCreated = false;
+      let syringeError: string | null = null;
       try {
         await api.mutations.syringes.create({
           syringeId,
@@ -251,12 +281,13 @@ export default function PerfumeMaster() {
         });
         syringeCreated = true;
       } catch (err) {
+        syringeError = err instanceof Error ? err.message : 'Unknown error while creating syringe';
         console.error('Syringe auto-creation failed:', err);
       }
 
-      return { perfume, syringeId, syringeCreated };
+      return { perfume, syringeId, syringeCreated, syringeError };
     },
-    onSuccess: ({ perfume, syringeId, syringeCreated }) => {
+    onSuccess: ({ perfume, syringeId, syringeCreated, syringeError }) => {
       queryClient.invalidateQueries({ queryKey: [api.master.perfumes.name] });
       queryClient.invalidateQueries({ queryKey: [api.syringes.list.name] });
       
@@ -267,8 +298,10 @@ export default function PerfumeMaster() {
       if (syringeCreated) {
         toast.success(`Perfume created and Syringe ${syringeId} auto-assigned`);
       } else {
+        const fallbackMessage = 'Please create a syringe manually in Facilities.';
+        const description = syringeError ? `${syringeError}. ${fallbackMessage}` : fallbackMessage;
         toast.warning('Perfume created, syringe was not created', {
-          description: 'A duplicate Syringe ID may have been detected. Please create a syringe manually in Facilities.',
+          description,
           duration: 8000
         });
       }
@@ -281,6 +314,7 @@ export default function PerfumeMaster() {
   const editPerfumeMutation = useMutation({
     mutationFn: async (perfume: Perfume) => {
       await api.mutations.perfumes.update(perfume.master_id, {
+        brandId: perfume.brand_id || null,
         brand: perfume.brand,
         name: perfume.name,
         concentration: perfume.concentration,
@@ -1127,7 +1161,7 @@ export default function PerfumeMaster() {
           families={familiesQuery.data || []}
           subFamilies={subFamiliesQuery.data || []}
           auras={aurasQuery.data || []}
-          brands={mockBrands}
+          brands={brands}
         />
       )}
 
@@ -1140,7 +1174,7 @@ export default function PerfumeMaster() {
           families={familiesQuery.data || []}
           subFamilies={subFamiliesQuery.data || []}
           auras={aurasQuery.data || []}
-          brands={mockBrands}
+          brands={brands}
           editPerfume={editTarget}
         />
       )}
@@ -1163,7 +1197,7 @@ export default function PerfumeMaster() {
           onImport={handleBulkImport}
           onClose={() => setShowBulkUpload(false)}
           existingPerfumeCount={allPerfumes.length}
-          brands={mockBrands}
+          brands={brands}
         />
       )}
     </div>

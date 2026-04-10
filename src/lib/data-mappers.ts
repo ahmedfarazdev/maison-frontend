@@ -22,6 +22,7 @@ const num = (v: string | number | null | undefined): number =>
 export function mapPerfume(row: any): Perfume {
   return {
     master_id: row.masterId,
+    brand_id: row.brandId ?? row.brand_id ?? undefined,
     brand: row.brand,
     name: row.name,
     concentration: row.concentration,
@@ -115,18 +116,19 @@ export function mapPurchase(row: any): SupplierPurchase {
 // ---- Syringe ----
 export function mapSyringe(row: any): Syringe {
   return {
-    syringe_id: row.syringeId,
-    assigned_master_id: row.assignedMasterId ?? undefined,
-    dedicated_perfume_name: row.dedicatedPerfumeName ?? undefined,
-    dedicated_perfume_id: row.dedicatedPerfumeId ?? undefined,
-    sequence_number: row.sequenceNumber,
+    id: row.id,
+    syringe_id: row.syringe_id ?? row.syringeId,
+    assigned_master_id: row.assigned_master_id ?? row.assignedMasterId ?? undefined,
+    dedicated_perfume_name: row.dedicated_perfume_name ?? row.dedicatedPerfumeName ?? undefined,
+    dedicated_perfume_id: row.dedicated_perfume_id ?? row.dedicatedPerfumeId ?? undefined,
+    sequence_number: row.sequence_number ?? row.sequenceNumber,
     size: row.size,
     status: row.status ?? 'active',
-    last_used: row.lastUsed ?? undefined,
-    use_count: row.useCount ?? 0,
+    last_used: row.last_used ?? row.lastUsed ?? undefined,
+    use_count: row.use_count ?? row.useCount ?? 0,
     active: row.active ?? true,
     notes: row.notes ?? '',
-    created_at: ts(row.createdAt),
+    created_at: ts(row.created_at ?? row.createdAt),
   };
 }
 
@@ -321,6 +323,7 @@ export function mapAlert(row: any): InventoryAlert {
 export function perfumeToDb(p: Partial<Perfume>): Record<string, unknown> {
   const m: Record<string, unknown> = {};
   if (p.master_id !== undefined) m.masterId = p.master_id;
+  if (p.brand_id !== undefined) m.brandId = p.brand_id;
   if (p.brand !== undefined) m.brand = p.brand;
   if (p.name !== undefined) m.name = p.name;
   if (p.concentration !== undefined) m.concentration = p.concentration;
@@ -377,5 +380,22 @@ export function bottleToDb(b: Partial<InventoryBottle>): Record<string, unknown>
   if (b.qr_data !== undefined) m.qrData = b.qr_data;
   if (b.photos !== undefined) m.photos = b.photos;
   if (b.notes !== undefined) m.notes = b.notes;
+  return m;
+}
+
+export function syringeToDb(s: Partial<Syringe>): Record<string, unknown> {
+  const m: Record<string, unknown> = {};
+  if (s.syringe_id !== undefined) m.syringe_id = s.syringe_id;
+  if (s.assigned_master_id !== undefined) m.assigned_master_id = s.assigned_master_id;
+  if (s.dedicated_perfume_name !== undefined) m.dedicated_perfume_name = s.dedicated_perfume_name;
+  if (s.dedicated_perfume_id !== undefined) m.dedicated_perfume_id = s.dedicated_perfume_id;
+  if (s.sequence_number !== undefined) m.sequence_number = s.sequence_number;
+  if (s.size !== undefined) m.size = s.size;
+  if (s.custom_size_ml !== undefined) m.custom_size_ml = s.custom_size_ml;
+  if (s.status !== undefined) m.status = s.status;
+  if (s.last_used !== undefined) m.last_used = s.last_used;
+  if (s.use_count !== undefined) m.use_count = s.use_count;
+  if (s.active !== undefined) m.active = s.active;
+  if (s.notes !== undefined) m.notes = s.notes;
   return m;
 }

@@ -4,15 +4,13 @@
 // Sizes: 5ml, 10ml, 20ml, custom. One syringe = one perfume.
 // ============================================================
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { PageHeader, StatusBadge } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { mockPerfumes } from '@/lib/mock-data';
-import { useApiQuery } from '@/hooks/useApiQuery';
 import { useSyringes } from '@/hooks/useSyringes';
 import { api } from '@/lib/api-client';
-import type { Syringe, SyringeStatus, SyringeSize, Perfume } from '@/types';
+import type { Syringe, SyringeStatus, SyringeSize, PerfumeSearchResult } from '@/types';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
@@ -65,10 +63,9 @@ function exportSyringesCsv(syringes: Syringe[]) {
 }
 
 // ---- Add/Edit Syringe Dialog ----
-function SyringeFormDialog({ syringe, nextSeq, perfumes, existingAssignments, isPending, onSave, onClose }: {
+function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, onSave, onClose }: {
   syringe?: Syringe;
   nextSeq: number;
-  perfumes: Perfume[];
   existingAssignments: Set<string>;
   isPending: boolean;
   onSave: (s: Syringe) => void;
@@ -84,25 +81,92 @@ function SyringeFormDialog({ syringe, nextSeq, perfumes, existingAssignments, is
   });
   const [customMl, setCustomMl] = useState<string>(syringe?.custom_size_ml?.toString() || '');
   const [perfumeSearch, setPerfumeSearch] = useState('');
-  const [selectedPerfume, setSelectedPerfume] = useState<Perfume | null>(
-    syringe?.assigned_master_id ? perfumes.find(p => p.master_id === syringe.assigned_master_id) || null : null
-  );
+  const [searchResults, setSearchResults] = useState<PerfumeSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedPerfume, setSelectedPerfume] = useState<PerfumeSearchResult | null>(null);
+
+  const formatPerfumeLabel = (perfume: PerfumeSearchResult) => {
+    if (perfume.brand && perfume.name) return `${perfume.brand} — ${perfume.name}`;
+    return perfume.name || perfume.master_id;
+  };
+
+  useEffect(() => {
+    if (!syringe?.assigned_master_id) {
+      setSelectedPerfume(null);
+      return;
+    }
+
+    let cancelled = false;
+    const masterId = syringe.assigned_master_id;
+
+    const loadAssignedPerfume = async () => {
+      try {
+        const results = await api.perfumes.search(masterId);
+        if (cancelled) return;
+        const match = results.find((p) => p.master_id === masterId) || results[0];
+        if (match) {
+          setSelectedPerfume(match);
+        } else {
+          setSelectedPerfume({
+            id: masterId,
+            master_id: masterId,
+            brand: '',
+            name: syringe.dedicated_perfume_name || masterId,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setSelectedPerfume({
+            id: masterId,
+            master_id: masterId,
+            brand: '',
+            name: syringe.dedicated_perfume_name || masterId,
+          });
+        }
+      }
+    };
+
+    loadAssignedPerfume();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [syringe?.assigned_master_id, syringe?.dedicated_perfume_name]);
+
+  useEffect(() => {
+    if (!perfumeSearch.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    let cancelled = false;
+    const handler = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const results = await api.perfumes.search(perfumeSearch);
+        if (!cancelled) setSearchResults(results);
+      } catch {
+        if (!cancelled) setSearchResults([]);
+      } finally {
+        if (!cancelled) setIsSearching(false);
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(handler);
+    };
+  }, [perfumeSearch]);
 
   // Only show perfumes that are NOT already assigned to another syringe
   const availablePerfumes = useMemo(() => {
-    return perfumes.filter(p => {
-      // If editing and this syringe already has this perfume, allow it
+    return searchResults.filter(p => {
       if (syringe?.assigned_master_id === p.master_id) return true;
-      // Otherwise, exclude already-assigned perfumes
       return !existingAssignments.has(p.master_id);
     });
-  }, [perfumes, existingAssignments, syringe]);
+  }, [searchResults, existingAssignments, syringe?.assigned_master_id]);
 
-  const filteredPerfumes = availablePerfumes.filter(p =>
-    p.name.toLowerCase().includes(perfumeSearch.toLowerCase()) ||
-    p.brand.toLowerCase().includes(perfumeSearch.toLowerCase()) ||
-    p.master_id.toLowerCase().includes(perfumeSearch.toLowerCase())
-  ).slice(0, 8);
+  const filteredPerfumes = availablePerfumes.slice(0, 8);
 
   const updateField = (field: keyof Syringe, value: unknown) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -118,10 +182,14 @@ function SyringeFormDialog({ syringe, nextSeq, perfumes, existingAssignments, is
       toast.error('Please enter a valid custom size in ml');
       return;
     }
+    const dedicatedName = selectedPerfume.brand && selectedPerfume.name
+      ? `${selectedPerfume.brand} ${selectedPerfume.name}`
+      : selectedPerfume.name || selectedPerfume.master_id;
     const saved: Syringe = {
+      id: syringe?.id || '',
       syringe_id: syringe?.syringe_id || `S/${nextSeq}`,
       assigned_master_id: selectedPerfume.master_id,
-      dedicated_perfume_name: `${selectedPerfume.brand} ${selectedPerfume.name}`,
+      dedicated_perfume_name: dedicatedName,
       dedicated_perfume_id: selectedPerfume.master_id,
       sequence_number: syringe?.sequence_number || nextSeq,
       size: (form.size as SyringeSize) || '5ml',
@@ -175,7 +243,7 @@ function SyringeFormDialog({ syringe, nextSeq, perfumes, existingAssignments, is
                   <Lock className="w-4 h-4 text-gold" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-xs font-semibold">{selectedPerfume.brand} — {selectedPerfume.name}</p>
+                  <p className="text-xs font-semibold">{formatPerfumeLabel(selectedPerfume)}</p>
                   <p className="text-[10px] font-mono text-muted-foreground">{selectedPerfume.master_id}</p>
                 </div>
                 <button onClick={() => setSelectedPerfume(null)} className="text-muted-foreground hover:text-destructive">
@@ -191,21 +259,28 @@ function SyringeFormDialog({ syringe, nextSeq, perfumes, existingAssignments, is
                 </div>
                 {perfumeSearch && (
                   <div className="mt-1 max-h-48 overflow-y-auto space-y-1 border border-border rounded-lg p-1">
-                    {filteredPerfumes.map(p => {
+                    {isSearching && (
+                      <div className="text-center py-2">
+                        <Loader2 className="w-4 h-4 animate-spin inline-block" />
+                      </div>
+                    )}
+                    {!isSearching && filteredPerfumes.map(p => {
                       const isAssigned = existingAssignments.has(p.master_id) && syringe?.assigned_master_id !== p.master_id;
                       return (
                         <button key={p.master_id} onClick={() => { if (!isAssigned) { setSelectedPerfume(p); setPerfumeSearch(''); } }}
                           disabled={isAssigned}
                           className={cn('w-full text-left px-3 py-2 rounded-md text-sm transition-colors',
                             isAssigned ? 'opacity-40 cursor-not-allowed' : 'hover:bg-muted/50')}>
-                          <p className="font-medium text-xs">{p.brand} — {p.name}</p>
+                          <p className="font-medium text-xs">{formatPerfumeLabel(p)}</p>
                           <p className="text-[10px] font-mono text-muted-foreground">
                             {p.master_id} {isAssigned && '(already assigned)'}
                           </p>
                         </button>
                       );
                     })}
-                    {filteredPerfumes.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No available perfumes</p>}
+                    {!isSearching && filteredPerfumes.length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-2">No available perfumes</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -281,11 +356,7 @@ export default function SyringesRegistryPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'row'>('grid');
   const [showForm, setShowForm] = useState(false);
   const [editingSyringe, setEditingSyringe] = useState<Syringe | undefined>(undefined);
-  const [syringeToDelete, setSyringeToDelete] = useState<string | null>(null);
-
-  // Load perfumes from API for assignment
-  const { data: perfumesData } = useApiQuery(() => api.master.perfumes());
-  const perfumes: Perfume[] = (perfumesData as any)?.data || mockPerfumes;
+  const [syringeToDelete, setSyringeToDelete] = useState<Syringe | null>(null);
 
   // Track which master_ids are already assigned
   const existingAssignments = useMemo(() => {
@@ -322,7 +393,7 @@ export default function SyringesRegistryPage() {
   const handleSaveSyringe = async (s: Syringe) => {
     try {
       if (editingSyringe) {
-        await updateSyringe.mutateAsync({ id: s.syringe_id, data: s });
+        await updateSyringe.mutateAsync({ id: s.id, data: s });
       } else {
         await createSyringe.mutateAsync(s);
       }
@@ -336,7 +407,7 @@ export default function SyringesRegistryPage() {
   const handleConfirmDelete = async () => {
     if (!syringeToDelete) return;
     try {
-      await deleteSyringe.mutateAsync(syringeToDelete);
+      await deleteSyringe.mutateAsync(syringeToDelete.id);
       setSyringeToDelete(null);
     } catch (err) {
       // Error handled globally
@@ -460,7 +531,7 @@ export default function SyringesRegistryPage() {
                         className="text-muted-foreground hover:text-gold p-1">
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
-                      <button onClick={() => setSyringeToDelete(s.syringe_id)}
+                      <button onClick={() => setSyringeToDelete(s)}
                         className="text-muted-foreground hover:text-destructive p-1">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -578,7 +649,7 @@ export default function SyringesRegistryPage() {
                             className="text-muted-foreground hover:text-gold p-1.5 rounded-md hover:bg-muted/50">
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
-                          <button onClick={() => setSyringeToDelete(s.syringe_id)}
+                          <button onClick={() => setSyringeToDelete(s)}
                             className="text-muted-foreground hover:text-destructive p-1.5 rounded-md hover:bg-muted/50">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -605,7 +676,6 @@ export default function SyringesRegistryPage() {
         <SyringeFormDialog
           syringe={editingSyringe}
           nextSeq={nextSeq}
-          perfumes={perfumes}
           existingAssignments={existingAssignments}
           isPending={createSyringe.isPending || updateSyringe.isPending}
           onSave={handleSaveSyringe}
@@ -619,7 +689,7 @@ export default function SyringesRegistryPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Syringe</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete syringe <strong className="text-foreground">{syringeToDelete}</strong>? This action cannot be undone.
+              Are you sure you want to delete syringe <strong className="text-foreground">{syringeToDelete?.syringe_id}</strong>? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
