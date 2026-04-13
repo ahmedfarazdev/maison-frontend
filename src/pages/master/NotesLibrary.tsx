@@ -23,7 +23,10 @@ import { PageHeader } from '@/components/shared';
 import { cn } from '@/lib/utils';
 import {
   Plus, Search, X, Edit2, Trash2, Droplets, Download, FileSpreadsheet, Upload, Check, AlertTriangle, Loader2,
+  ChevronDown, ChevronRight, ImageIcon,
 } from 'lucide-react';
+import GenericBulkImport, { ImportColumn } from '@/components/shared/GenericBulkImport';
+import { useFileUpload } from '@/hooks/useFileUpload';
 
 // ---- Types ----
 interface Note {
@@ -43,6 +46,13 @@ interface PerfumeRef {
   notePosition: string; // top, heart, base
 }
 
+const NOTE_IMPORT_COLUMNS: ImportColumn[] = [
+  { key: 'name', label: 'Name', required: true },
+  { key: 'category', label: 'Category', description: 'Citrus, Floral, Woody, etc.' },
+  { key: 'image_url', label: 'Image URL' },
+  { key: 'description', label: 'Description' },
+];
+
 const slugify = (value: string) =>
   value
     .trim()
@@ -50,17 +60,57 @@ const slugify = (value: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '');
 
-const makeNoteId = (name: string, existing: Set<string>) => {
-  const base = slugify(name) || `note-${Date.now()}`;
-  let candidate = base;
-  let counter = 2;
-  while (existing.has(candidate)) {
-    candidate = `${base}-${counter}`;
-    counter += 1;
-  }
-  existing.add(candidate);
-  return candidate;
-};
+// ---- Note Image Upload Component ----
+function NoteImageUpload({ currentUrl, onUpload }: { currentUrl?: string; onUpload: (url: string) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const { upload, uploading } = useFileUpload({
+    bucket: 'note-images',
+    folder: 'notes',
+    maxSizeMB: 2,
+    allowedTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    onSuccess: (result) => {
+      onUpload(result.url);
+      toast.success('Note image uploaded');
+    },
+    onError: (err) => toast.error(err),
+  });
+
+  const handleClick = () => fileRef.current?.click();
+  const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) await upload(file);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  return (
+    <div className="relative group">
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleChange} />
+      {currentUrl ? (
+        <div className="w-[100px] h-[100px] rounded-xl overflow-hidden border border-border bg-muted/20 cursor-pointer" onClick={handleClick}>
+          <img src={currentUrl} alt="Note" className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
+            {uploading ? <Loader2 className="w-6 h-6 text-white animate-spin" /> : <Upload className="w-6 h-6 text-white" />}
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={handleClick}
+          disabled={uploading}
+          className="w-[100px] h-[100px] rounded-xl border-2 border-dashed border-border hover:border-gold/50 bg-muted/10 flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer"
+        >
+          {uploading ? (
+            <Loader2 className="w-6 h-6 text-muted-foreground animate-spin" />
+          ) : (
+            <>
+              <ImageIcon className="w-6 h-6 text-muted-foreground/50" />
+              <span className="text-[10px] uppercase text-muted-foreground/50 font-semibold text-center px-1">Upload Photo</span>
+            </>
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function NotesLibrary() {
   const [search, setSearch] = useState('');
@@ -75,12 +125,6 @@ export default function NotesLibrary() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-
-  // CSV import state (matching Perfume Master pattern)
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [dragOver, setDragOver] = useState(false);
-  const [csvParsed, setCsvParsed] = useState<{ name: string; imageUrl?: string; description?: string; valid: boolean; error?: string }[]>([]);
-  const [importing, setImporting] = useState(false);
 
   // Data fetching
   const { data: notesRes, isLoading } = useApiQuery(
@@ -116,7 +160,13 @@ export default function NotesLibrary() {
   const handleAdd = async () => {
     if (!addForm.name.trim()) { toast.error('Note name is required'); return; }
     const existing = new Set(notes.map(n => n.noteId.toLowerCase()));
-    const noteId = makeNoteId(addForm.name.trim(), existing);
+    const baseId = slugify(addForm.name.trim()) || `note-${Date.now()}`;
+    let noteId = baseId;
+    let counter = 2;
+    while (existing.has(noteId)) {
+      noteId = `${baseId}-${counter}`;
+      counter += 1;
+    }
     setSaving(true);
     try {
       await api.notes.create({
@@ -186,117 +236,10 @@ export default function NotesLibrary() {
     }
   };
 
-  // ---- CSV Import (Perfume Master pattern) ----
-  const downloadTemplate = () => {
-    const header = 'name,image_url,description';
-    const example1 = 'Bergamot,https://example.com/bergamot.jpg,Fresh citrus note with bright zesty character';
-    const example2 = 'Rose,,Classic floral heart note';
-    const example3 = 'Oud,https://example.com/oud.jpg,Rich woody base note with smoky depth';
-    const csv = `${header}\n${example1}\n${example2}\n${example3}`;
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'maison_em_notes_template.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Template downloaded');
-  };
-
-  const parseCSV = (text: string) => {
-    const lines = text.split('\n').filter(l => l.trim());
-    if (lines.length < 2) { toast.error('CSV must have a header row and at least one data row'); return; }
-
-    const header = lines[0].toLowerCase().replace(/\r/g, '');
-    const cols = header.split(',').map(c => c.trim());
-    const nameIdx = cols.findIndex(c => c === 'name');
-    const imageIdx = cols.findIndex(c => c === 'image_url' || c === 'imageurl' || c === 'image');
-    const descIdx = cols.findIndex(c => c === 'description' || c === 'desc');
-
-    if (nameIdx === -1) {
-      toast.error('CSV must have a "name" column');
-      return;
-    }
-
-    const existingNames = new Set(notes.map(n => n.name.toLowerCase()));
-    const parsed: typeof csvParsed = [];
-
-    for (let i = 1; i < lines.length; i++) {
-      const row = lines[i].replace(/\r/g, '');
-      // Simple CSV parsing (handles quoted fields)
-      const values: string[] = [];
-      let current = '';
-      let inQuotes = false;
-      for (const char of row) {
-        if (char === '"') { inQuotes = !inQuotes; continue; }
-        if (char === ',' && !inQuotes) { values.push(current.trim()); current = ''; continue; }
-        current += char;
-      }
-      values.push(current.trim());
-
-      const name = values[nameIdx] || '';
-      if (!name) {
-        parsed.push({ name: `(row ${i + 1})`, valid: false, error: 'Missing name' });
-        continue;
-      }
-      if (existingNames.has(name.toLowerCase())) {
-        parsed.push({ name, valid: false, error: 'Duplicate — already exists' });
-        continue;
-      }
-      existingNames.add(name.toLowerCase());
-
-      parsed.push({
-        name,
-        imageUrl: imageIdx >= 0 ? values[imageIdx] || undefined : undefined,
-        description: descIdx >= 0 ? values[descIdx] || undefined : undefined,
-        valid: true,
-      });
-    }
-
-    setCsvParsed(parsed);
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    file.text().then(parseCSV);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file && file.name.endsWith('.csv')) {
-      file.text().then(parseCSV);
-    } else {
-      toast.error('Please drop a .csv file');
-    }
-  };
-
-  const validRows = csvParsed.filter(r => r.valid);
-  const invalidRows = csvParsed.filter(r => !r.valid);
-
-  const handleImportConfirm = async () => {
-    if (validRows.length === 0) return;
-    setImporting(true);
-    try {
-      const existingIds = new Set(notes.map(n => n.noteId.toLowerCase()));
-      const notesToImport = validRows.map(r => ({
-        noteId: makeNoteId(r.name, existingIds),
-        name: r.name,
-        imageUrl: r.imageUrl,
-        description: r.description,
-      }));
-      const result = await api.notes.bulkImport(notesToImport);
-      toast.success(`Imported ${(result as any)?.imported ?? notesToImport.length} notes`);
-      setShowImportDialog(false);
-      setCsvParsed([]);
-      refresh();
-    } catch (e: any) {
-      toast.error(e?.message || 'Import failed');
-    } finally {
-      setImporting(false);
-    }
+  // ---- Import ----
+  const handleBulkImport = async (data: any[]) => {
+    await api.notes.bulkImport(data);
+    refresh();
   };
 
   // ---- Click note → show perfumes ----
@@ -315,7 +258,7 @@ export default function NotesLibrary() {
         onClick={() => openPerfumes(note)}
       >
         {/* Image */}
-        <div className="aspect-square bg-muted/30 flex items-center justify-center overflow-hidden">
+        <div className="w-[100px] h-[100px] mx-auto bg-muted/30 flex items-center justify-center overflow-hidden rounded-lg mt-3">
           {note.imageUrl ? (
             <img
               src={note.imageUrl}
@@ -357,7 +300,7 @@ export default function NotesLibrary() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
       <PageHeader
         title="Notes Library"
         subtitle={`${notes.length} fragrance notes • Click any note to see tagged perfumes`}
@@ -383,7 +326,7 @@ export default function NotesLibrary() {
         <Button onClick={() => setShowAddDialog(true)} size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5">
           <Plus className="w-4 h-4" /> Add Note
         </Button>
-        <Button onClick={() => { setShowImportDialog(true); setCsvParsed([]); }} size="sm" variant="outline" className="gap-1.5">
+        <Button onClick={() => setShowImportDialog(true)} size="sm" variant="outline" className="gap-1.5">
           <Upload className="w-4 h-4" /> CSV Import
         </Button>
       </div>
@@ -423,13 +366,12 @@ export default function NotesLibrary() {
               <Input value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g., Bergamot" />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Image URL</label>
-              <Input value={addForm.imageUrl} onChange={e => setAddForm(f => ({ ...f, imageUrl: e.target.value }))} placeholder="https://..." />
-              {addForm.imageUrl && (
-                <div className="mt-2 w-16 h-16 rounded-lg overflow-hidden bg-muted/30">
-                  <img src={addForm.imageUrl} alt="Preview" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                </div>
-              )}
+              <label className="text-xs font-medium text-muted-foreground mb-2 block">Note Photo</label>
+              <NoteImageUpload
+                currentUrl={addForm.imageUrl || undefined}
+                onUpload={(url) => setAddForm(f => ({ ...f, imageUrl: url }))}
+              />
+              <p className="text-[10px] text-muted-foreground mt-2">Recommended: Square PNG/JPG, max 2MB</p>
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Description</label>
@@ -464,13 +406,12 @@ export default function NotesLibrary() {
               <Input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Image URL</label>
-              <Input value={editForm.imageUrl} onChange={e => setEditForm(f => ({ ...f, imageUrl: e.target.value }))} placeholder="https://..." />
-              {editForm.imageUrl && (
-                <div className="mt-2 w-16 h-16 rounded-lg overflow-hidden bg-muted/30">
-                  <img src={editForm.imageUrl} alt="Preview" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                </div>
-              )}
+              <label className="text-xs font-medium text-muted-foreground mb-2 block">Note Photo</label>
+              <NoteImageUpload
+                currentUrl={editForm.imageUrl || undefined}
+                onUpload={(url) => setEditForm(f => ({ ...f, imageUrl: url }))}
+              />
+              <p className="text-[10px] text-muted-foreground mt-2">Recommended: Square PNG/JPG, max 2MB</p>
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Description</label>
@@ -491,134 +432,41 @@ export default function NotesLibrary() {
         </DialogContent>
       </Dialog>
 
-      {/* ---- CSV Import Dialog (Perfume Master pattern) ---- */}
-      <Dialog open={showImportDialog} onOpenChange={(open) => { setShowImportDialog(open); if (!open) setCsvParsed([]); }}>
-        <DialogContent className="bg-card border-border/50 max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Bulk CSV Import</DialogTitle>
-            <DialogDescription>Upload a CSV to create fragrance notes in bulk</DialogDescription>
-          </DialogHeader>
-
-          <div className="flex-1 overflow-y-auto space-y-4 py-2">
-            {/* Drop zone — shown when no CSV parsed yet */}
-            {csvParsed.length === 0 && (
-              <>
-                <div
-                  className={cn(
-                    'border-2 border-dashed rounded-xl p-12 text-center transition-all duration-200 cursor-pointer',
-                    dragOver
-                      ? 'border-gold bg-gold/5 scale-[1.01]'
-                      : 'border-border hover:border-gold/50 hover:bg-muted/30'
-                  )}
-                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                  onDragLeave={() => setDragOver(false)}
-                  onDrop={handleDrop}
-                  onClick={() => fileRef.current?.click()}
-                >
-                  <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleFileSelect} />
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="w-16 h-16 rounded-2xl bg-gold/10 flex items-center justify-center">
-                      <FileSpreadsheet className="w-8 h-8 text-gold" />
-                    </div>
-                    <div>
-                      <p className="text-base font-semibold">Drop your CSV file here</p>
-                      <p className="text-sm text-muted-foreground mt-1">or click to browse</p>
-                    </div>
-                    <p className="text-xs text-muted-foreground max-w-md">
-                      Required column: <span className="font-mono text-foreground">name</span>.
-                      Optional: <span className="font-mono text-foreground">image_url</span>, <span className="font-mono text-foreground">description</span>
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex justify-center">
-                  <Button variant="outline" size="sm" className="gap-1.5" onClick={downloadTemplate}>
-                    <Download className="w-3.5 h-3.5" /> Download CSV Template
-                  </Button>
-                </div>
-              </>
-            )}
-
-            {/* Parsed results */}
-            {csvParsed.length > 0 && (
-              <>
-                {/* Summary bar */}
-                <div className="flex items-center gap-4 p-4 bg-muted/30 rounded-xl border border-border">
-                  <div className="flex items-center gap-2">
-                    <FileSpreadsheet className="w-5 h-5 text-muted-foreground" />
-                    <span className="text-sm font-semibold">{csvParsed.length} rows parsed</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Check className="w-4 h-4 text-emerald-500" />
-                    <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">{validRows.length} valid</span>
-                  </div>
-                  {invalidRows.length > 0 && (
-                    <div className="flex items-center gap-1.5">
-                      <AlertTriangle className="w-4 h-4 text-red-500" />
-                      <span className="text-sm text-red-600 dark:text-red-400 font-medium">{invalidRows.length} errors</span>
-                    </div>
-                  )}
-                  <Button variant="ghost" size="sm" className="ml-auto gap-1.5 text-muted-foreground"
-                    onClick={() => { setCsvParsed([]); if (fileRef.current) fileRef.current.value = ''; }}>
-                    <Trash2 className="w-3.5 h-3.5" /> Clear
-                  </Button>
-                </div>
-
-                {/* Row table */}
-                <div className="border border-border rounded-xl overflow-hidden">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="bg-muted/30 border-b border-border">
-                        <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground font-semibold px-4 py-2.5 w-12">#</th>
-                        <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground font-semibold px-4 py-2.5">Status</th>
-                        <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground font-semibold px-4 py-2.5">Name</th>
-                        <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground font-semibold px-4 py-2.5">Image</th>
-                        <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground font-semibold px-4 py-2.5">Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {csvParsed.map((row, idx) => (
-                        <tr key={idx} className={cn('border-b border-border last:border-0', !row.valid && 'bg-red-50/5')}>
-                          <td className="px-4 py-2 text-xs text-muted-foreground">{idx + 1}</td>
-                          <td className="px-4 py-2">
-                            {row.valid ? (
-                              <Check className="w-4 h-4 text-emerald-500" />
-                            ) : (
-                              <span className="text-[10px] text-red-500">{row.error}</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-2 text-sm font-medium">{row.name}</td>
-                          <td className="px-4 py-2">
-                            {row.imageUrl ? (
-                              <img src={row.imageUrl} alt="" className="w-8 h-8 rounded object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                            ) : (
-                              <span className="text-[10px] text-muted-foreground">—</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-2 text-xs text-muted-foreground truncate max-w-[200px]">{row.description || '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </div>
-
-          <DialogFooter className="border-t border-border pt-4">
-            <Button variant="outline" onClick={() => { setShowImportDialog(false); setCsvParsed([]); }}>Cancel</Button>
-            {csvParsed.length > 0 && (
-              <Button
-                onClick={handleImportConfirm}
-                disabled={importing || validRows.length === 0}
-                className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5"
-              >
-                {importing ? 'Importing...' : `Import ${validRows.length} Notes`}
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ---- CSV Import Dialog ---- */}
+      {showImportDialog && (
+        <GenericBulkImport
+          title="Import Fragrance Notes"
+          subtitle="Upload a CSV to add multiple notes to your library at once."
+          columns={NOTE_IMPORT_COLUMNS}
+          onImport={handleBulkImport}
+          onClose={() => setShowImportDialog(false)}
+          templateFilename="maison-notes-template.csv"
+          templateExample={{
+            name: 'Bergamot',
+            category: 'citrus',
+            image_url: 'https://...',
+            description: 'Fresh and bright citrus note'
+          }}
+          transformRow={(raw) => {
+            const existingIds = new Set(notes.map(n => n.noteId.toLowerCase()));
+            const name = raw.name || '';
+            const base = slugify(name) || `note-${Date.now()}`;
+            let noteId = base;
+            let counter = 2;
+            while (existingIds.has(noteId)) {
+              noteId = `${base}-${counter}`;
+              counter += 1;
+            }
+            return {
+              noteId,
+              name,
+              category: raw.category || 'other',
+              imageUrl: raw.image_url || null,
+              description: raw.description || null
+            };
+          }}
+        />
+      )}
 
       {/* ---- Perfumes using this note Dialog ---- */}
       <Dialog open={showPerfumesDialog} onOpenChange={setShowPerfumesDialog}>

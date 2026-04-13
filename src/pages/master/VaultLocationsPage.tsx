@@ -20,8 +20,10 @@ import {
   MapPin, Plus, Search, ChevronDown, ChevronRight, Grid3X3,
   Package, Droplets, Box, Layers, X, Check, Edit2, Trash2,
   ArrowRight, Download, LayoutGrid, List, AlertTriangle,
-  Wine, ChevronLeft, Scan, Hash, Loader2
+  Wine, ChevronLeft, Scan, Hash, Loader2, Upload
 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import GenericBulkImport, { ImportColumn } from '@/components/shared/GenericBulkImport';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,6 +51,18 @@ const TYPE_COLORS: Record<LocationType, { bg: string; border: string; text: stri
   packaging: { bg: 'bg-emerald-50 dark:bg-emerald-950/20', border: 'border-emerald-200 dark:border-emerald-800', text: 'text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-500' },
   staging: { bg: 'bg-violet-50 dark:bg-violet-950/20', border: 'border-violet-200 dark:border-violet-800', text: 'text-violet-700 dark:text-violet-300', dot: 'bg-violet-500' },
 };
+
+const VAULT_IMPORT_COLUMNS: ImportColumn[] = [
+  { key: 'vault', label: 'Vault', required: true, description: 'Main, Decant, or Staging' },
+  { key: 'zone', label: 'Zone', required: true },
+  { key: 'shelf', label: 'Shelf', required: true },
+  { key: 'slot', label: 'Slot', required: true },
+  { key: 'type', label: 'Type', required: true, description: 'sealed, decant, packaging, staging' },
+  { key: 'occupied', label: 'Occupied', description: 'Yes/No' },
+  { key: 'master_id', label: 'Master ID', description: 'Assigned perfume Master ID' },
+  { key: 'perfume_name', label: 'Perfume Name' },
+];
+
 
 // ---- Helpers ----
 function generateLocationCode(vault: string, zone: string, shelf: string, slot: string): string {
@@ -631,8 +645,8 @@ function AddBottleToLocationDialog({
                 <div className={cn(
                   'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all',
                   i === currentStepIdx ? 'bg-gold/15 text-gold ring-1 ring-gold/30' :
-                  i < currentStepIdx ? 'bg-success/10 text-success' :
-                  'bg-muted text-muted-foreground'
+                    i < currentStepIdx ? 'bg-success/10 text-success' :
+                      'bg-muted text-muted-foreground'
                 )}>
                   {i < currentStepIdx ? <Check className="w-3 h-3" /> : <span>{s.num}</span>}
                   <span className="hidden sm:inline">{s.label}</span>
@@ -912,6 +926,7 @@ function exportLocationsCsv(locations: VaultLocation[]) {
 
 // ---- Main Page ----
 export default function VaultLocationsPage() {
+  const queryClient = useQueryClient();
   const { locationsQuery, createLocation, updateLocation, clearLocation, deleteLocation } = useLocations();
   const locations = locationsQuery.data || [];
   const [searchTerm, setSearchTerm] = useState('');
@@ -920,6 +935,7 @@ export default function VaultLocationsPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showAddZone, setShowAddZone] = useState(false);
   const [showAddBottle, setShowAddBottle] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<VaultLocation | null>(null);
   const [expandedZones, setExpandedZones] = useState<Set<string>>(new Set());
 
@@ -1034,6 +1050,11 @@ export default function VaultLocationsPage() {
     }
   }, [locations]);
 
+  const handleBulkImport = async (data: any[]) => {
+    await api.locations.bulkImport(data);
+    queryClient.invalidateQueries({ queryKey: ['vaultLocations'] });
+  };
+
   const handleAddBottleComplete = useCallback((data: {
     perfume: SearchablePerfume;
     locationId: string;
@@ -1072,6 +1093,9 @@ export default function VaultLocationsPage() {
 
   const headerActions = (
     <div className="flex items-center gap-2">
+      <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowBulkImport(true)}>
+        <Upload className="w-3.5 h-3.5" /> Import CSV
+      </Button>
       <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleAutoAssign}>
         <ArrowRight className="w-3.5 h-3.5" /> Auto-Assign Next
       </Button>
@@ -1364,6 +1388,44 @@ export default function VaultLocationsPage() {
           locations={locations}
           onComplete={handleAddBottleComplete}
           onClose={() => setShowAddBottle(false)}
+        />
+      )}
+
+      {showBulkImport && (
+        <GenericBulkImport
+          title="Import Vault Locations"
+          subtitle="Add multiple vault locations in bulk. This will create empty or occupied slots across zones."
+          columns={VAULT_IMPORT_COLUMNS}
+          onImport={handleBulkImport}
+          onClose={() => setShowBulkImport(false)}
+          templateFilename="vault-locations-template.csv"
+          templateExample={{
+            vault: 'Main',
+            zone: 'A',
+            shelf: '1',
+            slot: '01',
+            type: 'sealed',
+            occupied: 'No',
+            master_id: '',
+            perfume_name: ''
+          }}
+          transformRow={(raw) => {
+            const vault = raw.vault || 'Main';
+            const zone = raw.zone || 'A';
+            const shelf = raw.shelf || '1';
+            const slot = raw.slot || '01';
+            return {
+              vault,
+              zone,
+              shelf,
+              slot,
+              locationCode: generateLocationCode(vault, zone, shelf, slot),
+              type: raw.type || 'sealed',
+              occupied: (raw.occupied || 'No').toLowerCase() === 'yes',
+              masterId: raw.master_id || null,
+              perfumeName: raw.perfume_name || null
+            };
+          }}
         />
       )}
     </div>

@@ -6,6 +6,7 @@ import { useState, useMemo, useCallback, useRef } from 'react';
 import { useBrands } from '@/hooks/useBrands';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { PageHeader } from '@/components/shared';
+import GenericBulkImport, { type ImportColumn } from '@/components/shared/GenericBulkImport';
 import { api } from '@/lib/api-client';
 import type { Brand, BrandInsights, Perfume, AuraColor } from '@/types';
 import { useQuery } from '@tanstack/react-query';
@@ -549,6 +550,7 @@ export default function BrandsPage() {
   const [countryFilter, setCountryFilter] = useState('');
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -643,6 +645,21 @@ export default function BrandsPage() {
     exportToCsv('maison_em_brands.csv', headers, rows);
   };
 
+  const brandImportColumns: ImportColumn[] = [
+    { key: 'brand_id', label: 'Brand ID', required: true, description: 'Unique identifier (e.g., br_chanel)' },
+    { key: 'name', label: 'Brand Name', required: true },
+    { key: 'made_in', label: 'Made In', description: 'Country of origin' },
+    { key: 'logo_url', label: 'Logo URL' },
+    { key: 'website', label: 'Website' },
+    { key: 'notes', label: 'Notes' },
+  ];
+
+  const handleBulkImport = async (data: Brand[]) => {
+    await api.brands.bulkImport(data);
+    // Refetch brands
+    brands.refetch?.();
+  };
+
   const SortIcon = sortDir === 'asc' ? SortAsc : SortDesc;
 
   if (selectedBrand) {
@@ -677,6 +694,9 @@ export default function BrandsPage() {
         subtitle={`${brands.filter(b => b.active).length} brands registered · ${countries.length} countries`}
         actions={
           <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => setShowBulkImport(true)}>
+              <Upload className="w-4 h-4 mr-1" /> Bulk Import
+            </Button>
             <Button size="sm" variant="outline" onClick={handleExportAllBrands}>
               <Download className="w-4 h-4 mr-1" /> Export CSV
             </Button>
@@ -688,6 +708,25 @@ export default function BrandsPage() {
       />
 
       {showAdd && <AddBrandForm onAdd={handleAddBrand} onCancel={() => setShowAdd(false)} isAdding={addBrand.isPending} />}
+
+      {showBulkImport && (
+        <GenericBulkImport<Brand>
+          title="Bulk Import Brands"
+          subtitle="Upload a CSV file to add multiple brands at once."
+          columns={brandImportColumns}
+          onImport={handleBulkImport}
+          onClose={() => setShowBulkImport(false)}
+          templateFilename="maison_brands_template.csv"
+          templateExample={{
+            brand_id: 'br_chanel',
+            name: 'Chanel',
+            made_in: 'France',
+            logo_url: 'https://example.com/chanel.png',
+            website: 'https://chanel.com',
+            notes: 'High-end luxury brand'
+          }}
+        />
+      )}
 
       {/* Filters */}
       <div className="flex items-center gap-3">

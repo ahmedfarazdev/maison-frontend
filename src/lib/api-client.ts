@@ -23,6 +23,7 @@ import {
   mapVaultLocation, mapInventoryBottle, mapDecantBottle, mapOrder,
   mapJob, mapBottleLedgerEvent, mapDecantLedgerEvent, mapSubscriptionCycle,
   mapPrintJob, mapAlert, syringeToDb,
+    brandToDb,
 } from './data-mappers';
 
 // ============================================================
@@ -32,8 +33,8 @@ import {
 
 export const API_BASE = import.meta.env.VITE_API_URL
 
-const ACCESS_TOKEN_KEY = 'sb-access-token';
-const REFRESH_TOKEN_KEY = 'sb-refresh-token';
+export const ACCESS_TOKEN_KEY = 'sb-access-token';
+export const REFRESH_TOKEN_KEY = 'sb-refresh-token';
 
 type AuthTokens = {
   accessToken: string;
@@ -209,6 +210,22 @@ function wrapOne<T>(data: T): ApiResponse<T> {
   return { data };
 }
 
+type PerfumeBulkImportFailure = {
+  rowIndex: number;
+  message: string;
+  code?: string;
+};
+
+export type PerfumeBulkImportMutationResult = {
+  created: Perfume[];
+  failed: PerfumeBulkImportFailure[];
+  summary: {
+    total: number;
+    created: number;
+    failed: number;
+  };
+};
+
 const normalizeList = <T = any>(input: unknown): T[] => {
   if (Array.isArray(input)) return input as T[];
   const data = (input as { data?: T[] } | null)?.data;
@@ -232,6 +249,7 @@ const DEFAULT_TWO_ML_TIERS = [
 
 function mapAuraDefinition(row: any): AuraDefinition {
   return {
+    id: normalizeString(row?.id) || undefined,
     aura_id: normalizeString(row?.auraId ?? row?.aura_id),
     name: normalizeString(row?.name),
     color: normalizeString(row?.color, 'Red') as AuraDefinition['color'],
@@ -248,6 +266,7 @@ function mapAuraDefinition(row: any): AuraDefinition {
 
 function mapFamily(row: any): Family {
   return {
+    id: normalizeString(row?.id) || undefined,
     main_family_id: normalizeString(row?.familyId ?? row?.mainFamilyId ?? row?.main_family_id),
     name: normalizeString(row?.name),
     display_order: Number(row?.displayOrder ?? row?.display_order ?? 0),
@@ -259,6 +278,7 @@ function mapFamily(row: any): Family {
 
 function mapSubFamily(row: any): SubFamily {
   return {
+    id: normalizeString(row?.id) || undefined,
     sub_family_id: normalizeString(row?.subFamilyId ?? row?.sub_family_id),
     ff_code: normalizeString(row?.ffCode ?? row?.ff_code),
     main_family_id: normalizeString(row?.mainFamilyId ?? row?.main_family_id),
@@ -344,6 +364,180 @@ const toSubFamilyPayload = (input: any): Record<string, unknown> => {
   if (moodTags !== undefined) payload.moodTags = moodTags;
   if (input?.active !== undefined) payload.active = input.active;
   return payload;
+};
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const isUuid = (value: unknown): value is string =>
+  typeof value === 'string' && UUID_PATTERN.test(value);
+
+const normalizeNullableText = (value: unknown): string | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const text = String(value).trim();
+  return text.length ? text : null;
+};
+
+const buildSupplierId = (name: unknown): string => {
+  const prefix = String(name ?? 'SUP')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 16) || 'SUP';
+  const token = Date.now().toString(36).toUpperCase();
+  return `${prefix}-${token}`;
+};
+
+const toSupplierPayload = (input: any, options?: { ensureSupplierId?: boolean }): Record<string, unknown> => {
+  const payload: Record<string, unknown> = {};
+
+  const supplierId = input?.supplierId ?? input?.supplier_id;
+  if (supplierId) {
+    payload.supplierId = String(supplierId);
+  } else if (options?.ensureSupplierId) {
+    payload.supplierId = buildSupplierId(input?.name);
+  }
+
+  if (input?.type !== undefined) payload.type = input.type;
+  if (input?.name !== undefined) payload.name = input.name;
+
+  const contactName = input?.contactName ?? input?.contact_name;
+  if (contactName !== undefined) payload.contactName = normalizeNullableText(contactName);
+
+  const contactEmail = input?.contactEmail ?? input?.contact_email;
+  if (contactEmail !== undefined) payload.contactEmail = normalizeNullableText(contactEmail);
+
+  const contactPhone = input?.contactPhone ?? input?.contact_phone;
+  if (contactPhone !== undefined) payload.contactPhone = normalizeNullableText(contactPhone);
+
+  if (input?.country !== undefined) payload.country = input.country;
+  if (input?.city !== undefined) payload.city = normalizeNullableText(input.city);
+
+  const paymentTerms = input?.paymentTerms ?? input?.payment_terms;
+  if (paymentTerms !== undefined) payload.paymentTerms = normalizeNullableText(paymentTerms);
+
+  if (input?.currency !== undefined) payload.currency = normalizeNullableText(input.currency);
+  if (input?.website !== undefined) payload.website = normalizeNullableText(input.website);
+  if (input?.notes !== undefined) payload.notes = normalizeNullableText(input.notes);
+
+  const riskFlag = input?.riskFlag ?? input?.risk_flag;
+  if (riskFlag !== undefined) payload.riskFlag = Boolean(riskFlag);
+
+  const supplierType = input?.supplierType ?? input?.supplier_type;
+  if (supplierType !== undefined) payload.supplierType = supplierType;
+
+  if (input?.active !== undefined) payload.active = Boolean(input.active);
+
+  const totalSpent = input?.totalSpent ?? input?.total_spent;
+  if (totalSpent !== undefined) payload.totalSpent = totalSpent === null ? null : String(totalSpent);
+
+  const totalItems = input?.totalItems ?? input?.total_items;
+  if (totalItems !== undefined) payload.totalItems = totalItems === null ? null : Number(totalItems);
+
+  return payload;
+};
+
+async function resolveSupplierUuid(idOrSupplierId: string): Promise<string> {
+  if (isUuid(idOrSupplierId)) {
+    return idOrSupplierId;
+  }
+
+  const res = await apiGet<any>(`/suppliers?search=${encodeURIComponent(idOrSupplierId)}`);
+  const suppliers = normalizeList(res);
+  const match = suppliers.find((supplier: any) =>
+    (supplier?.supplierId ?? supplier?.supplier_id) === idOrSupplierId,
+  );
+
+  if (!match?.id) {
+    throw new Error(`Supplier UUID not found for supplier ID "${idOrSupplierId}"`);
+  }
+
+  return String(match.id);
+}
+
+type BrandLookup = {
+  idToName: Map<string, string>;
+  nameToId: Map<string, string>;
+};
+
+const emptyBrandLookup = (): BrandLookup => ({
+  idToName: new Map<string, string>(),
+  nameToId: new Map<string, string>(),
+});
+
+async function getBrandLookup(): Promise<BrandLookup> {
+  const res = await apiGet<any>('/brands');
+  const brands = normalizeList(res);
+  const lookup = emptyBrandLookup();
+
+  for (const brand of brands) {
+    const brandId = normalizeString(brand?.brandId ?? brand?.brand_id);
+    const brandName = normalizeString(brand?.name);
+    if (!brandId || !brandName) continue;
+
+    lookup.idToName.set(brandId, brandName);
+    lookup.nameToId.set(brandName.toLowerCase(), brandId);
+  }
+
+  return lookup;
+}
+
+const mapSupplierBrandTagRow = (row: any, nameToId: Map<string, string>) => {
+  const supplierId = normalizeString(row?.supplierId ?? row?.supplier_id);
+  const brandName = normalizeString(row?.brandName ?? row?.brand_name);
+  const brandId = brandName ? nameToId.get(brandName.toLowerCase()) : undefined;
+
+  return {
+    id: normalizeString(row?.id),
+    supplierId,
+    supplier_id: supplierId,
+    brandName,
+    brand_name: brandName,
+    brandId,
+    brand_id: brandId,
+    createdAt: normalizeString(row?.createdAt ?? row?.created_at),
+  };
+};
+
+async function fetchSupplierBrandTags(supplierId: string): Promise<any[]> {
+  const [res, lookup] = await Promise.all([
+    apiGet<any>(`/suppliers/${encodeURIComponent(supplierId)}/brand-tags`),
+    getBrandLookup().catch(() => emptyBrandLookup()),
+  ]);
+
+  const rows = normalizeList(res);
+  return rows.map((row) => mapSupplierBrandTagRow(row, lookup.nameToId));
+}
+
+async function createSupplierBrandTag(supplierId: string, brandName: string): Promise<any> {
+  const created = await apiPost<any>(`/suppliers/${encodeURIComponent(supplierId)}/brand-tags`, {
+    supplierId,
+    brandName,
+  });
+
+  const lookup = await getBrandLookup().catch(() => emptyBrandLookup());
+  return mapSupplierBrandTagRow(created, lookup.nameToId);
+}
+
+const resolveBrandNames = (brandIds: string[], idToName: Map<string, string>): string[] => {
+  const uniqueIds = Array.from(new Set(brandIds.filter(Boolean)));
+  const missingIds: string[] = [];
+  const names: string[] = [];
+
+  for (const brandId of uniqueIds) {
+    const brandName = idToName.get(brandId);
+    if (!brandName) {
+      missingIds.push(brandId);
+      continue;
+    }
+    names.push(brandName);
+  }
+
+  if (missingIds.length > 0) {
+    throw new Error(`Unknown brand IDs: ${missingIds.join(', ')}`);
+  }
+
+  return names;
 };
 
 const normalizeNote = (value: string) => value.trim().toLowerCase();
@@ -508,7 +702,7 @@ export const api = {
       try {
         const res = await apiGet<any>('/suppliers');
         const items = normalizeList(res);
-        return wrapList(items.map(mapSupplier));
+        return wrapList(items.map((item) => mapSupplier(item)));
       } catch {
         return wrapList([]);
       }
@@ -522,12 +716,15 @@ export const api = {
       list: async () => wrapList([]),
     },
     supplierBrands: {
-      list: async () => wrapList([]),
+      list: async (supplierId: string) => {
+        const items = await fetchSupplierBrandTags(supplierId);
+        return wrapList(items);
+      },
     },
     filterTags: async (category?: string) => {
       const res = await apiGet<any>('/taxonomies/filter-tags');
       const items = normalizeList(res);
-      const filtered = category ? items.filter((tag) => tag.category === category) : items;
+      const filtered = category ? items.filter((tag: any) => tag.category === category) : items;
       return wrapList(filtered);
     }
   },
@@ -578,43 +775,57 @@ export const api = {
       return wrapList(matches);
     },
     bulkImport: async (items: any[]) => {
-      let imported = 0;
-      for (const item of items) {
-        await apiPost('/notes', item);
-        imported += 1;
-      }
-      return wrapOne({ imported });
+      const res = await apiPost<any[]>('/notes/bulk', items);
+      return wrapOne({ imported: res.length });
     },
   },
-  auras: {
-    list: async () => {
-      const res = await apiGet<any>('/taxonomies/auras');
-      const items = normalizeList(res);
-      return wrapList(items.map(mapAuraDefinition));
+  taxonomies: {
+    auras: {
+      list: async () => {
+        const res = await apiGet('/taxonomies/auras');
+        const items = normalizeList(res);
+        return wrapList(items.map(mapAuraDefinition));
+      },
+      create: async (d: any) => {
+        const res = await apiPost('/taxonomies/auras', toAuraPayload(d));
+        return mapAuraDefinition(res);
+      },
+      update: async (id: string, d: any) => {
+        const res = await apiPatch(`/taxonomies/auras/${id}`, toAuraPayload(d));
+        return mapAuraDefinition(res);
+      },
+      delete: async (id: string) => apiDelete(`/taxonomies/auras/${id}`),
     },
-    create: async (d: any) => apiPost('/taxonomies/auras', toAuraPayload(d)),
-    update: async (id: string, d: any) => apiPatch(`/taxonomies/auras/${id}`, toAuraPayload(d)),
-    delete: async (id: string) => apiDelete(`/taxonomies/auras/${id}`),
-  },
-  families: {
-    list: async () => {
-      const res = await apiGet<any>('/taxonomies/families');
-      const items = normalizeList(res);
-      return wrapList(items.map(mapFamily));
+    families: {
+      list: async () => {
+        const res = await apiGet<any>('/taxonomies/families');
+        const items = normalizeList(res);
+        return wrapList(items.map(mapFamily));
+      },
+      create: async (d: any) => apiPost('/taxonomies/families', toFamilyPayload(d)),
+      update: async (id: string, d: any) => apiPatch(`/taxonomies/families/${id}`, toFamilyPayload(d)),
+      delete: async (id: string) => apiDelete(`/taxonomies/families/${id}`),
     },
-    create: async (d: any) => apiPost('/taxonomies/families', toFamilyPayload(d)),
-    update: async (id: string, d: any) => apiPatch(`/taxonomies/families/${id}`, toFamilyPayload(d)),
-    delete: async (id: string) => apiDelete(`/taxonomies/families/${id}`),
-  },
-  subFamilies: {
-    list: async () => {
-      const res = await apiGet<any>('/taxonomies/sub-families');
-      const items = normalizeList(res);
-      return wrapList(items.map(mapSubFamily));
+    subFamilies: {
+      list: async () => {
+        const res = await apiGet<any>('/taxonomies/sub-families');
+        const items = normalizeList(res);
+        return wrapList(items.map(mapSubFamily));
+      },
+      create: async (d: any) => apiPost('/taxonomies/sub-families', toSubFamilyPayload(d)),
+      update: async (id: string, d: any) => apiPatch(`/taxonomies/sub-families/${id}`, toSubFamilyPayload(d)),
+      delete: async (id: string) => apiDelete(`/taxonomies/sub-families/${id}`),
     },
-    create: async (d: any) => apiPost('/taxonomies/sub-families', toSubFamilyPayload(d)),
-    update: async (id: string, d: any) => apiPatch(`/taxonomies/sub-families/${id}`, toSubFamilyPayload(d)),
-    delete: async (id: string) => apiDelete(`/taxonomies/sub-families/${id}`),
+    filterTags: {
+      list: async () => {
+        const res = await apiGet<any>('/taxonomies/filter-tags');
+        const items = normalizeList(res);
+        return wrapList(items);
+      },
+      create: async (d: any) => apiPost('/taxonomies/filter-tags', d),
+      update: async (id: string, d: any) => apiPatch(`/taxonomies/filter-tags/${id}`, d),
+      delete: async (id: string) => apiDelete(`/taxonomies/filter-tags/${id}`),
+    },
   },
   locations: {
     list: async () => {
@@ -628,13 +839,55 @@ export const api = {
     create: async (d: any) => wrapOne(d),
     update: async (id: string, d: any) => wrapOne(d),
     delete: async (id: string) => wrapOne({ id }),
+    bulkImport: async (items: any[]) => {
+      const res = await apiPost<any[]>('/vaults/bulk', items);
+      return wrapList(res.map(mapVaultLocation));
+    },
   },
   suppliers: {
-    list: async () => wrapList([]),
-    get: async (id: string) => wrapOne({ id }),
-    create: async (d: any) => wrapOne(d),
-    update: async (id: string, d: any) => wrapOne(d),
-    delete: async (id: string) => wrapOne({ id }),
+    list: async () => {
+      const res = await apiGet<any>('/suppliers');
+      const items = normalizeList(res);
+      return wrapList(items.map((item) => mapSupplier(item)));
+    },
+    get: async (idOrSupplierId: string) => {
+      if (isUuid(idOrSupplierId)) {
+        const res = await apiGet<any>(`/suppliers/${encodeURIComponent(idOrSupplierId)}`);
+        return wrapOne(mapSupplier(res));
+      }
+
+      const res = await apiGet<any>(`/suppliers?search=${encodeURIComponent(idOrSupplierId)}`);
+      const items = normalizeList(res);
+      const match = items.find((supplier: any) =>
+        (supplier?.supplierId ?? supplier?.supplier_id) === idOrSupplierId,
+      );
+
+      if (!match) {
+        throw new Error(`Supplier not found: ${idOrSupplierId}`);
+      }
+
+      return wrapOne(mapSupplier(match));
+    },
+    create: async (d: any) => {
+      const payload = toSupplierPayload(d, { ensureSupplierId: true });
+      const created = await apiPost<any>('/suppliers', payload);
+      return wrapOne(mapSupplier(created));
+    },
+    update: async (idOrSupplierId: string, d: any) => {
+      const supplierUuid = await resolveSupplierUuid(idOrSupplierId);
+      const payload = toSupplierPayload(d);
+      const updated = await apiPut<any>(`/suppliers/${encodeURIComponent(supplierUuid)}`, payload);
+      return wrapOne(mapSupplier(updated));
+    },
+    delete: async (idOrSupplierId: string) => {
+      const supplierUuid = await resolveSupplierUuid(idOrSupplierId);
+      await apiDelete(`/suppliers/${encodeURIComponent(supplierUuid)}`);
+      return wrapOne({ id: supplierUuid });
+    },
+    bulkImport: async (items: any[]) => {
+      const res = await apiPost<any[]>('/suppliers/bulk', items.map(toSupplierPayload));
+      return wrapList(res.map((s: any) => mapSupplier(s)));
+    },
   },
   syringes: {
     list: async () => {
@@ -656,31 +909,86 @@ export const api = {
       await apiDelete(`/syringes/${encodeURIComponent(id)}`);
       return wrapOne({ id });
     },
+    bulkImport: async (items: any[]) => {
+      const res = await apiPost<any[]>('/syringes/bulk', items.map(syringeToDb));
+      return wrapList(res.map(mapSyringe));
+    },
   },
   pricing: {
     list: async () => wrapList([]),
     update: async (id: string, d: any) => wrapOne(d),
   },
   filterTags: {
-    list: async () => {
-      const res = await apiGet<any>('/taxonomies/filter-tags');
-      const items = normalizeList(res);
-      return wrapList(items);
-    },
-    create: async (d: any) => apiPost('/taxonomies/filter-tags', d),
-    update: async (id: string, d: any) => apiPatch(`/taxonomies/filter-tags/${id}`, d),
-    delete: async (id: string) => apiDelete(`/taxonomies/filter-tags/${id}`),
+    list: async () => api.taxonomies.filterTags.list(),
+    create: async (d: any) => api.taxonomies.filterTags.create(d),
+    update: async (id: string, d: any) => api.taxonomies.filterTags.update(id, d),
+    delete: async (id: string) => api.taxonomies.filterTags.delete(id),
   },
   supplierBrands: {
-    list: async () => wrapList([]),
-    create: async (d: any) => wrapOne(d),
-    delete: async (id: string) => wrapOne({ id }),
+    list: async (supplierId: string) => {
+      const items = await fetchSupplierBrandTags(supplierId);
+      return wrapList(items);
+    },
+    create: async (d: any) => {
+      const supplierId = String(d?.supplierId ?? d?.supplier_id ?? '');
+      if (!supplierId) {
+        throw new Error('supplierId is required to create supplier brand tag');
+      }
+
+      let brandName = normalizeNullableText(d?.brandName ?? d?.brand_name) ?? undefined;
+      if (!brandName) {
+        const brandId = String(d?.brandId ?? d?.brand_id ?? '');
+        if (brandId) {
+          const lookup = await getBrandLookup();
+          brandName = lookup.idToName.get(brandId);
+        }
+      }
+
+      if (!brandName) {
+        throw new Error('brandName or brandId is required to create supplier brand tag');
+      }
+
+      const created = await createSupplierBrandTag(supplierId, brandName);
+      return wrapOne(created);
+    },
+    delete: async (supplierId: string, tagId?: string) => {
+      const resolvedSupplierId = tagId ? supplierId : '';
+      const resolvedTagId = tagId ?? supplierId;
+
+      if (!resolvedSupplierId) {
+        throw new Error('supplierId is required when deleting supplier brand tags');
+      }
+
+      await apiDelete(`/suppliers/${encodeURIComponent(resolvedSupplierId)}/brand-tags/${encodeURIComponent(resolvedTagId)}`);
+      return wrapOne({ id: resolvedTagId });
+    },
   },
   brands: {
-    list: async () => wrapList([]),
-    get: async (id: string) => wrapOne({ id }),
-    create: async (d: any) => wrapOne(d),
-    update: async (id: string, d: any) => wrapOne(d),
+    list: async () => {
+      const res = await apiGet<any>('/brands');
+      const items = normalizeList(res);
+      return wrapList(items.map(mapBrand));
+    },
+    get: async (id: string) => {
+      const res = await apiGet<any>(`/brands/${encodeURIComponent(id)}`);
+      return wrapOne(mapBrand(res));
+    },
+    create: async (d: any) => {
+      const res = await apiPost<any>('/brands', brandToDb(d));
+      return wrapOne(mapBrand(res));
+    },
+    update: async (id: string, d: any) => {
+      const res = await apiPatch<any>(`/brands/${encodeURIComponent(id)}`, brandToDb(d));
+      return wrapOne(mapBrand(res));
+    },
+    delete: async (id: string) => {
+      await apiDelete(`/brands/${encodeURIComponent(id)}`);
+      return wrapOne({ id });
+    },
+    bulkImport: async (items: any[]) => {
+      const res = await apiPost<any[]>('/brands/bulk', items.map(brandToDb));
+      return wrapList(res.map(mapBrand));
+    },
   },
   perfumes: {
     list: async (params?: any) => {
@@ -712,7 +1020,7 @@ export const api = {
         const rows = await apiGet<any[]>('/inventory/sealed-bottles');
         return wrapList(rows.map(mapInventoryBottle));
       } catch {
-        return wrapList(mock.mockInventoryBottles);
+        return wrapList(mock.mockSealedBottles);
       }
     },
     decantBottles: async () => {
@@ -956,7 +1264,97 @@ export const api = {
       create: (d: any) => apiPost('/perfumes', d),
       update: (id: string, d: any) => apiPut(`/perfumes/${id}`, d),
       delete: (id: string) => apiDelete(`/perfumes/${id}`),
-      bulkImport: async (d: any) => wrapOne({ imported: 0 }),
+      bulkImport: async (rows: any[]): Promise<PerfumeBulkImportMutationResult> => {
+        const res = await apiPost<any>('/perfumes/bulk', rows);
+
+        const createdRows = Array.isArray(res?.created) ? res.created : [];
+        const failedRows = Array.isArray(res?.failed) ? res.failed : [];
+        const created = createdRows.map(mapPerfume);
+        const failed = failedRows.map((row: any, index: number) => ({
+          rowIndex: Number.isFinite(Number(row?.rowIndex)) ? Number(row.rowIndex) : index + 1,
+          message: String(row?.message || 'Import failed'),
+          code: row?.code ? String(row.code) : undefined,
+        }));
+
+        return {
+          created,
+          failed,
+          summary: {
+            total: Number.isFinite(Number(res?.summary?.total)) ? Number(res.summary.total) : rows.length,
+            created: Number.isFinite(Number(res?.summary?.created)) ? Number(res.summary.created) : created.length,
+            failed: Number.isFinite(Number(res?.summary?.failed)) ? Number(res.summary.failed) : failed.length,
+          },
+        };
+      },
+    },
+    suppliers: {
+      create: async (d: any) => {
+        const payload = toSupplierPayload(d, { ensureSupplierId: true });
+        return apiPost('/suppliers', payload);
+      },
+      update: async (idOrSupplierId: string, d: any) => {
+        const supplierUuid = await resolveSupplierUuid(idOrSupplierId);
+        const payload = toSupplierPayload(d);
+        return apiPut(`/suppliers/${encodeURIComponent(supplierUuid)}`, payload);
+      },
+      delete: async (idOrSupplierId: string) => {
+        const supplierUuid = await resolveSupplierUuid(idOrSupplierId);
+        return apiDelete(`/suppliers/${encodeURIComponent(supplierUuid)}`);
+      },
+    },
+    supplierBrands: {
+      create: async (d: any) => {
+        const supplierId = String(d?.supplierId ?? d?.supplier_id ?? '');
+        if (!supplierId) {
+          throw new Error('supplierId is required to create supplier brand tag');
+        }
+
+        let brandName = normalizeNullableText(d?.brandName ?? d?.brand_name) ?? undefined;
+        if (!brandName) {
+          const brandId = String(d?.brandId ?? d?.brand_id ?? '');
+          if (brandId) {
+            const lookup = await getBrandLookup();
+            brandName = lookup.idToName.get(brandId);
+          }
+        }
+
+        if (!brandName) {
+          throw new Error('brandName or brandId is required to create supplier brand tag');
+        }
+
+        return createSupplierBrandTag(supplierId, brandName);
+      },
+      delete: async (supplierId: string, tagId: string) => {
+        await apiDelete(`/suppliers/${encodeURIComponent(supplierId)}/brand-tags/${encodeURIComponent(tagId)}`);
+        return { id: tagId };
+      },
+      set: async (supplierId: string, brandIds: string[]) => {
+        const lookup = await getBrandLookup();
+        const desiredBrandNames = resolveBrandNames(brandIds, lookup.idToName);
+        const desiredSet = new Set(desiredBrandNames.map((name) => name.toLowerCase()));
+
+        const existingTags = await fetchSupplierBrandTags(supplierId);
+        const existingByName = new Map(
+          existingTags
+            .filter((tag: any) => tag.brandName)
+            .map((tag: any) => [String(tag.brandName).toLowerCase(), tag]),
+        );
+
+        const deleteOps = existingTags
+          .filter((tag: any) => tag.id && !desiredSet.has(String(tag.brandName || '').toLowerCase()))
+          .map((tag: any) =>
+            apiDelete(`/suppliers/${encodeURIComponent(supplierId)}/brand-tags/${encodeURIComponent(tag.id)}`),
+          );
+
+        const createOps = desiredBrandNames
+          .filter((brandName) => !existingByName.has(brandName.toLowerCase()))
+          .map((brandName) => createSupplierBrandTag(supplierId, brandName));
+
+        await Promise.all([...deleteOps, ...createOps]);
+
+        const refreshed = await fetchSupplierBrandTags(supplierId);
+        return wrapList(refreshed);
+      },
     },
     purchaseOrders: {
       create: (d: any) => apiPost('/purchase-orders', d),
@@ -983,6 +1381,24 @@ export const api = {
       recordPayment: (id: string, d: any) => apiPost(`/procurement/packaging-pos/${id}/payment`, d),
       confirmDelivery: (id: string, items: any[]) => apiPost(`/procurement/packaging-pos/${id}/confirm`, { items }),
       cancel: (id: string, reason: string) => apiPost(`/procurement/packaging-pos/${id}/cancel`, { reason }),
+    },
+    brands: {
+      create: async (d: any) => {
+        const res = await apiPost<any>('/brands', brandToDb(d));
+        return wrapOne(mapBrand(res));
+      },
+      update: async (id: string, d: any) => {
+        const res = await apiPatch<any>(`/brands/${encodeURIComponent(id)}`, brandToDb(d));
+        return wrapOne(mapBrand(res));
+      },
+      delete: async (id: string) => {
+        await apiDelete(`/brands/${encodeURIComponent(id)}`);
+        return wrapOne({ id });
+      },
+      bulkImport: async (items: any[]) => {
+        const res = await apiPost<any[]>('/brands/bulk', items.map(brandToDb));
+        return wrapList(res.map(mapBrand));
+      },
     },
     reconciliation: {
       createSession: async (d: any) => apiPost<any>('/inventory/reconciliation', d),
@@ -1030,15 +1446,10 @@ export const api = {
       clear: (id: string) => apiPost(`/inventory/locations/${id}/clear`, {}),
       delete: (id: string) => apiDelete(`/inventory/locations/${id}`),
     },
-    tags: {
-      create: (d: any) => apiPost('/taxonomies/filter-tags', d),
-      update: (id: string, d: any) => apiPatch(`/taxonomies/filter-tags/${id}`, d),
-      delete: (id: string) => apiDelete(`/taxonomies/filter-tags/${id}`),
-    },
     filterTags: {
-      create: (d: any) => apiPost('/taxonomies/filter-tags', d),
-      update: (id: string, d: any) => apiPatch(`/taxonomies/filter-tags/${id}`, d),
-      delete: (id: string) => apiDelete(`/taxonomies/filter-tags/${id}`),
+      create: (d: any) => api.taxonomies.filterTags.create(d),
+      update: (id: string, d: any) => api.taxonomies.filterTags.update(id, d),
+      delete: (id: string) => api.taxonomies.filterTags.delete(id),
     },
     pricing: {
       saveSurcharges: (items: any[]) => apiPost('/pricing-rules/surcharges', items),
@@ -1049,19 +1460,36 @@ export const api = {
     },
     taxonomies: {
       auras: {
-        create: (d: any) => apiPost('/taxonomies/auras', toAuraPayload(d)),
-        update: (id: string, d: any) => apiPatch(`/taxonomies/auras/${id}`, toAuraPayload(d)),
+        create: async (d: any) => {
+          const res = await apiPost<any>('/taxonomies/auras', toAuraPayload(d));
+          return mapAuraDefinition(res);
+        },
+        update: async (id: string, d: any) => {
+          const res = await apiPatch<any>(`/taxonomies/auras/${id}`, toAuraPayload(d));
+          return mapAuraDefinition(res);
+        },
         delete: (id: string) => apiDelete(`/taxonomies/auras/${id}`),
       },
       families: {
-        create: (d: any) => apiPost('/taxonomies/families', toFamilyPayload(d)),
-        update: (id: string, d: any) => apiPatch(`/taxonomies/families/${id}`, toFamilyPayload(d)),
+        create: async (d: any) => {
+          const res = await apiPost<any>('/taxonomies/families', toFamilyPayload(d));
+          return mapFamily(res);
+        },
+        update: async (id: string, d: any) => {
+          const res = await apiPatch<any>(`/taxonomies/families/${id}`, toFamilyPayload(d));
+          return mapFamily(res);
+        },
         delete: (id: string) => apiDelete(`/taxonomies/families/${id}`),
       },
       subFamilies: {
-        create: (d: any) => apiPost('/taxonomies/sub-families', toSubFamilyPayload(d)),
-        update: (id: string, d: any) => apiPatch(`/taxonomies/sub-families/${id}`, toSubFamilyPayload(d)),
-        delete: (id: string) => apiDelete(`/taxonomies/sub-families/${id}`),
+        create: async (d: any) => api.taxonomies.subFamilies.create(d),
+        update: async (id: string, d: any) => api.taxonomies.subFamilies.update(id, d),
+        delete: (id: string) => api.taxonomies.subFamilies.delete(id),
+      },
+      filterTags: {
+        create: async (d: any) => api.taxonomies.filterTags.create(d),
+        update: async (id: string, d: any) => api.taxonomies.filterTags.update(id, d),
+        delete: (id: string) => api.taxonomies.filterTags.delete(id),
       },
     },
     packagingSkus: {

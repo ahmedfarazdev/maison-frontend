@@ -6,11 +6,11 @@
 // ============================================================
 
 import { useState, useMemo } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageHeader, StatusBadge } from '@/components/shared';
 import { Button } from '@/components/ui/button';
-import { useApiQuery } from '@/hooks/useApiQuery';
-import { api } from '@/lib/api-client';
+// import { useApiQuery } from '@/hooks/useApiQuery';
+import { api, type PerfumeBulkImportMutationResult } from '@/lib/api-client';
 import {
   Search, Plus, X, Filter, ArrowUpDown, Upload, Pipette, Download,
   LayoutGrid, List, Droplets, Package, FlaskConical, Trash2, Pencil,
@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { Perfume, AuraColor, Syringe, InventoryBottle, DecantBottle } from '@/types';
 import AddPerfumeForm from '@/components/master/AddPerfumeForm';
-import BulkCsvUpload from '@/components/master/BulkCsvUpload';
+import BulkCsvUpload, { type PerfumeBulkSyringeInput } from '@/components/master/BulkCsvUpload';
 import PricingCalculator from '@/components/master/PricingCalculator';
 import { useBrands } from '@/hooks/useBrands';
 import { useTaxonomies } from '@/hooks/useTaxonomies';
@@ -48,7 +48,20 @@ const TAG_COLORS = {
   personality: 'bg-purple-500/15 text-purple-400 border-purple-500/20',
 };
 
+const PERFUME_MASTER_QUERY_KEYS = {
+  perfumes: ['master', 'perfumes'] as const,
+  sealedBottles: ['inventory', 'sealed-bottles'] as const,
+  decantBottles: ['inventory', 'decant-bottles'] as const,
+  syringes: ['syringes'] as const,
+};
+
 type ViewMode = 'grid' | 'row';
+
+type PerfumeCsvImportResult = {
+  createdCount: number;
+  failedRows: Array<{ rowIndex: number; message: string }>;
+  syringeWarning?: string;
+};
 
 // ---- Inventory helpers ----
 interface PerfumeInventoryStats {
@@ -95,9 +108,38 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
 }
 
 export default function PerfumeMaster() {
-  const { data: perfumesRes } = useApiQuery(() => api.master.perfumes(), []);
-  const { data: bottlesRes } = useApiQuery(() => api.inventory.sealedBottles(), []);
-  const { data: decantRes } = useApiQuery(() => api.inventory.decantBottles(), []);
+  const perfumesQuery = useQuery({
+    queryKey: PERFUME_MASTER_QUERY_KEYS.perfumes,
+    queryFn: async () => {
+      const res = await api.master.perfumes();
+      return res.data;
+    },
+  });
+
+  const bottlesQuery = useQuery({
+    queryKey: PERFUME_MASTER_QUERY_KEYS.sealedBottles,
+    queryFn: async () => {
+      const res = await api.inventory.sealedBottles();
+      return res.data;
+    },
+  });
+
+  const decantQuery = useQuery({
+    queryKey: PERFUME_MASTER_QUERY_KEYS.decantBottles,
+    queryFn: async () => {
+      const res = await api.inventory.decantBottles();
+      return res.data;
+    },
+  });
+
+  const perfumesRes = perfumesQuery.data ?? [];
+  const bottlesRes = bottlesQuery.data ?? [];
+  const decantRes = decantQuery.data ?? [];
+
+
+
+  // const { data: perfumesRes, refetch: refetchPerfumes } = useApiQuery(() => api.master.perfumes(), []); const { data: bottlesRes } = useApiQuery(() => api.inventory.sealedBottles(), []);
+  // const { data: decantRes } = useApiQuery(() => api.inventory.decantBottles(), []);
   const { brands } = useBrands();
 
   const { familiesQuery, subFamiliesQuery, aurasQuery } = useTaxonomies();
@@ -105,7 +147,6 @@ export default function PerfumeMaster() {
 
   const isDataLoading = familiesQuery.isLoading || subFamiliesQuery.isLoading || aurasQuery.isLoading || syringesQuery.isLoading;
 
-  const [perfumes, setPerfumes] = useState<Perfume[]>([]);
   // We can keep search and local state here
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Perfume | null>(null);
@@ -131,8 +172,7 @@ export default function PerfumeMaster() {
   const bottles = (bottlesRes || []) as InventoryBottle[];
   const decantBottles = (decantRes || []) as DecantBottle[];
 
-  // Merge API data with locally added perfumes
-  const allPerfumes = [...((perfumesRes || []) as Perfume[]), ...perfumes];
+  const allPerfumes = (perfumesRes || []) as Perfume[];
 
   // Pre-compute inventory stats for all perfumes
   const inventoryMap = useMemo(() => {
@@ -290,11 +330,11 @@ export default function PerfumeMaster() {
     onSuccess: ({ perfume, syringeId, syringeCreated, syringeError }) => {
       queryClient.invalidateQueries({ queryKey: [api.master.perfumes.name] });
       queryClient.invalidateQueries({ queryKey: [api.syringes.list.name] });
-      
+
       // Close form and show the newly created perfume in UI list
       setShowAddForm(false);
       setSelected(perfume); // Open the detail drawer for the new perfume
-      
+
       if (syringeCreated) {
         toast.success(`Perfume created and Syringe ${syringeId} auto-assigned`);
       } else {
@@ -305,7 +345,7 @@ export default function PerfumeMaster() {
           duration: 8000
         });
       }
-      
+
       toast.info('To add stock, go to Station 0 → Stock Register', { duration: 5000 });
     },
     // Removed default meta.successMessage to avoid double toasts when syringeCreated is false
@@ -313,7 +353,13 @@ export default function PerfumeMaster() {
 
   const editPerfumeMutation = useMutation({
     mutationFn: async (perfume: Perfume) => {
-      await api.mutations.perfumes.update(perfume.master_id, {
+      const targetId = perfume.id || allPerfumes.find(p => p.master_id === perfume.master_id)?.id;
+
+      if (!targetId) {
+        throw new Error('Perfume UUID missing. Refr esh the list and try again.');
+      }
+
+      await api.mutations.perfumes.update(targetId, {
         brandId: perfume.brand_id || null,
         brand: perfume.brand,
         name: perfume.name,
@@ -351,32 +397,67 @@ export default function PerfumeMaster() {
         bottleImages: perfume.bottle_images || [],
         brandImageUrl: perfume.brand_image_url || null,
       });
+
       return perfume;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [api.master.perfumes.name] });
+      queryClient.invalidateQueries({ queryKey: PERFUME_MASTER_QUERY_KEYS.perfumes });
       setEditTarget(null);
     },
     meta: { successMessage: 'Perfume updated successfully' }
   });
 
   const deletePerfumeMutation = useMutation({
-    mutationFn: async (masterId: string) => {
-      await api.mutations.perfumes.delete(masterId);
-      return masterId;
+    mutationFn: async (id: string) => {
+      await api.mutations.perfumes.delete(id);
+      return id;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [api.master.perfumes.name] });
+      queryClient.invalidateQueries({ queryKey: PERFUME_MASTER_QUERY_KEYS.perfumes });
       setDeleteTarget(null);
       setSelected(null);
     },
     meta: { successMessage: 'Perfume deleted successfully' }
   });
 
-  const handleBulkImport = (importedPerfumes: Perfume[]) => {
-    setPerfumes(prev => [...prev, ...importedPerfumes]);
-    // The syringes will get refetched from server if bulk upload logic adds them. Or just page reload.
-    setShowBulkUpload(false);
+  const handleBulkImport = async (
+    importedPerfumes: Perfume[],
+    importedSyringes: PerfumeBulkSyringeInput[]
+  ): Promise<PerfumeCsvImportResult> => {
+    const result: PerfumeBulkImportMutationResult = await api.mutations.perfumes.bulkImport(importedPerfumes);
+    const createdPerfumes = result.created ?? [];
+    const failedRows = (result.failed ?? []).map((row) => ({
+      rowIndex: row.rowIndex,
+      message: row.message,
+    }));
+
+    await queryClient.invalidateQueries({ queryKey: PERFUME_MASTER_QUERY_KEYS.perfumes });
+
+    let syringeWarning: string | undefined;
+    if (createdPerfumes.length > 0 && importedSyringes.length > 0) {
+      const createdMasterIds = new Set(createdPerfumes.map((perfume) => perfume.master_id));
+      const syringesToCreate = importedSyringes.filter((syringe) => {
+        const assignedMasterId = syringe.assigned_master_id;
+        return Boolean(assignedMasterId && createdMasterIds.has(assignedMasterId));
+      });
+
+      if (syringesToCreate.length > 0) {
+        try {
+          await api.syringes.bulkImport(syringesToCreate);
+          await queryClient.invalidateQueries({ queryKey: PERFUME_MASTER_QUERY_KEYS.syringes });
+        } catch (error) {
+          syringeWarning = error instanceof Error
+            ? `Syringe auto-create skipped: ${error.message}`
+            : 'Syringe auto-create skipped due to an unknown error';
+        }
+      }
+    }
+
+    return {
+      createdCount: result.summary.created,
+      failedRows,
+      syringeWarning,
+    };
   };
 
   const getSyringeForPerfume = (masterId: string) => {
@@ -1187,7 +1268,12 @@ export default function PerfumeMaster() {
         description={deleteTarget ? `Are you sure you want to delete "${deleteTarget.brand} — ${deleteTarget.name}" (${deleteTarget.master_id})? This action cannot be undone.` : ''}
         onConfirm={async () => {
           if (!deleteTarget) return;
-          await deletePerfumeMutation.mutateAsync(deleteTarget.master_id);
+          const targetId = deleteTarget.id || allPerfumes.find(p => p.master_id === deleteTarget.master_id)?.id;
+          if (!targetId) {
+            toast.error('Perfume UUID missing. Refresh the page and try again.');
+            return;
+          }
+          await deletePerfumeMutation.mutateAsync(targetId);
         }}
       />
 

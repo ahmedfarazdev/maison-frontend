@@ -18,48 +18,48 @@ const ts = (d: Date | string | null | undefined): string =>
 const num = (v: string | number | null | undefined): number =>
   typeof v === 'number' ? v : Number(v ?? 0);
 
-// ---- Perfume ----
 export function mapPerfume(row: any): Perfume {
   return {
-    master_id: row.masterId,
+    id: row.id ?? undefined,
+    master_id: row.masterId ?? row.master_id,
     brand_id: row.brandId ?? row.brand_id ?? undefined,
     brand: row.brand,
     name: row.name,
     concentration: row.concentration,
-    gender_target: row.genderTarget,
+    gender_target: row.genderTarget ?? row.gender_target,
     visibility: row.visibility ?? 'active',
-    main_family_id: row.mainFamilyId ?? '',
-    sub_family_id: row.subFamilyId ?? '',
-    aura_id: row.auraId ?? '',
-    aura_color: row.auraColor ?? 'Red',
-    hype_level: row.hypeLevel ?? 'Medium',
-    scent_type: row.scentType ?? 'Fresh',
+    main_family_id: row.mainFamilyId ?? row.main_family_id ?? '',
+    sub_family_id: row.subFamilyId ?? row.sub_family_id ?? '',
+    aura_id: row.auraId ?? row.aura_id ?? '',
+    aura_color: row.auraColor ?? row.aura_color ?? 'Red',
+    hype_level: row.hypeLevel ?? row.hype_level ?? 'Medium',
+    scent_type: row.scentType ?? row.scent_type ?? 'Fresh',
     season: row.season ?? [],
     occasion: row.occasion ?? [],
     personality: row.personality ?? [],
-    notes_top: row.notesTop ?? [],
-    notes_heart: row.notesHeart ?? [],
-    notes_base: row.notesBase ?? [],
-    proposed_vault: row.proposedVault ?? '',
-    scent_signature: row.scentSignature ?? '',
-    aura_verse: row.auraVerse ?? '',
-    scent_prose: row.scentProse ?? '',
-    scent_story: row.scentStory ?? '',
-    made_in: row.madeIn ?? '',
-    retail_price: num(row.retailPrice),
-    wholesale_price: num(row.wholesalePrice),
-    reference_size_ml: row.referenceSizeMl ?? 100,
-    price_per_ml: num(row.pricePerMl),
-    price_multiplier: num(row.priceMultiplier),
+    notes_top: row.notesTop ?? row.notes_top ?? [],
+    notes_heart: row.notesHeart ?? row.notes_heart ?? [],
+    notes_base: row.notesBase ?? row.notes_base ?? [],
+    proposed_vault: row.proposedVault ?? row.proposed_vault ?? '',
+    scent_signature: row.scentSignature ?? row.scent_signature ?? '',
+    aura_verse: row.auraVerse ?? row.aura_verse ?? '',
+    scent_prose: row.scentProse ?? row.scent_prose ?? '',
+    scent_story: row.scentStory ?? row.scent_story ?? '',
+    made_in: row.madeIn ?? row.made_in ?? '',
+    retail_price: num(row.retailPrice ?? row.retail_price),
+    wholesale_price: num(row.wholesalePrice ?? row.wholesale_price),
+    reference_size_ml: row.referenceSizeMl ?? row.reference_size_ml ?? 100,
+    price_per_ml: num(row.pricePerMl ?? row.price_per_ml),
+    price_multiplier: num(row.priceMultiplier ?? row.price_multiplier),
     surcharge: num(row.surcharge),
-    surcharge_category: row.surchargeCategory ?? 'S0',
-    decant_pricing: row.decantPricing ?? [],
-    in_stock: row.inStock ?? true,
-    bottle_image_url: row.bottleImageUrl ?? '',
-    bottle_images: row.bottleImages ?? [],
-    brand_image_url: row.brandImageUrl ?? '',
-    created_at: ts(row.createdAt),
-    updated_at: ts(row.updatedAt),
+    surcharge_category: row.surchargeCategory ?? row.surcharge_category ?? 'S0',
+    decant_pricing: row.decantPricing ?? row.decant_pricing ?? [],
+    in_stock: row.inStock ?? row.in_stock ?? true,
+    bottle_image_url: row.bottleImageUrl ?? row.bottle_image_url ?? '',
+    bottle_images: row.bottleImages ?? row.bottle_images ?? [],
+    brand_image_url: row.brandImageUrl ?? row.brand_image_url ?? '',
+    created_at: ts(row.createdAt ?? row.created_at),
+    updated_at: ts(row.updatedAt ?? row.updated_at),
   };
 }
 
@@ -80,6 +80,7 @@ export function mapBrand(row: any): Brand {
 // ---- Supplier ----
 export function mapSupplier(row: any, purchases?: any[]): Supplier {
   return {
+    id: row.id ?? undefined,
     supplier_id: row.supplierId,
     type: row.type,
     supplier_type: row.supplierType || 'perfume',
@@ -397,5 +398,17 @@ export function syringeToDb(s: Partial<Syringe>): Record<string, unknown> {
   if (s.use_count !== undefined) m.use_count = s.use_count;
   if (s.active !== undefined) m.active = s.active;
   if (s.notes !== undefined) m.notes = s.notes;
+  return m;
+}
+
+export function brandToDb(b: Partial<Brand>): Record<string, unknown> {
+  const m: Record<string, unknown> = {};
+  if (b.brand_id !== undefined) m.brandId = b.brand_id;
+  if (b.name !== undefined) m.name = b.name;
+  if (b.made_in !== undefined) m.madeIn = b.made_in;
+  if (b.logo_url !== undefined) m.logoUrl = b.logo_url;
+  if (b.website !== undefined) m.website = b.website;
+  if (b.notes !== undefined) m.notes = b.notes;
+  if (b.active !== undefined) m.active = b.active;
   return m;
 }

@@ -3,7 +3,7 @@
 // ============================================================
 
 import { useState, useCallback } from "react";
-import { API_BASE } from "@/lib/api-client";
+import { API_BASE, ACCESS_TOKEN_KEY } from "@/lib/api-client";
 
 export interface UploadResult {
   url: string;
@@ -15,6 +15,7 @@ export interface UploadResult {
 
 interface UseFileUploadOptions {
   folder?: string;
+  bucket?: string;
   maxSizeMB?: number;
   allowedTypes?: string[];
   onSuccess?: (result: UploadResult) => void;
@@ -24,6 +25,7 @@ interface UseFileUploadOptions {
 export function useFileUpload(options: UseFileUploadOptions = {}) {
   const {
     folder = "uploads",
+    bucket = "perfume-images",
     maxSizeMB = 10,
     allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"],
     onSuccess,
@@ -67,9 +69,20 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
 
         setProgress(30);
 
-        const response = await fetch(`${API_BASE}/upload?folder=${encodeURIComponent(folder)}`, {
+        const token = localStorage.getItem(ACCESS_TOKEN_KEY);
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+
+        const url = new URL(`${API_BASE}/upload`);
+        url.searchParams.append("folder", folder);
+        url.searchParams.append("bucket", bucket);
+
+        const response = await fetch(url.toString(), {
           method: "POST",
           body: formData,
+          headers,
           credentials: "include",
         });
 
@@ -94,7 +107,7 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
         setUploading(false);
       }
     },
-    [folder, maxSizeMB, allowedTypes, onSuccess, onError]
+    [folder, bucket, maxSizeMB, allowedTypes, onSuccess, onError]
   );
 
   const reset = useCallback(() => {

@@ -16,8 +16,10 @@ import { cn } from '@/lib/utils';
 import {
   Pipette, Plus, Search, Edit2, Check, X, Download,
   Activity, AlertCircle, Trash2, RefreshCw,
-  LayoutGrid, List, Lock, Loader2,
+  LayoutGrid, List, Lock, Loader2, Upload
 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import GenericBulkImport, { ImportColumn } from '@/components/shared/GenericBulkImport';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,6 +45,17 @@ function getSizeLabel(s: Syringe): string {
   if (s.size === 'custom' && s.custom_size_ml) return `${s.custom_size_ml}ml`;
   return s.size;
 }
+
+const SYRINGE_IMPORT_COLUMNS: ImportColumn[] = [
+  { key: 'syringe_id', label: 'Syringe ID', description: 'e.g. S/001' },
+  { key: 'size', label: 'Size', required: true, description: '5ml, 10ml, 20ml, or custom' },
+  { key: 'custom_size_ml', label: 'Custom ML' },
+  { key: 'status', label: 'Status', description: 'active, cleaning, retired, damaged' },
+  { key: 'assigned_master_id', label: 'Master ID', required: true },
+  { key: 'dedicated_perfume_name', label: 'Perfume Name' },
+  { key: 'use_count', label: 'Use Count' },
+  { key: 'notes', label: 'Notes' },
+];
 
 // ---- CSV Export ----
 function exportSyringesCsv(syringes: Syringe[]) {
@@ -347,6 +360,7 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
 
 // ---- Main Page ----
 export default function SyringesRegistryPage() {
+  const queryClient = useQueryClient();
   const { syringesQuery, createSyringe, updateSyringe, deleteSyringe } = useSyringes();
   const syringes = syringesQuery.data || [];
 
@@ -355,6 +369,7 @@ export default function SyringesRegistryPage() {
   const [filterSize, setFilterSize] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'row'>('grid');
   const [showForm, setShowForm] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [editingSyringe, setEditingSyringe] = useState<Syringe | undefined>(undefined);
   const [syringeToDelete, setSyringeToDelete] = useState<Syringe | null>(null);
 
@@ -392,16 +407,15 @@ export default function SyringesRegistryPage() {
 
   const handleSaveSyringe = async (s: Syringe) => {
     try {
-      if (editingSyringe) {
-        await updateSyringe.mutateAsync({ id: s.id, data: s });
-      } else {
-        await createSyringe.mutateAsync(s);
-      }
-      setShowForm(false);
       setEditingSyringe(undefined);
     } catch (err) {
       // Error is caught by global handlers
     }
+  };
+
+  const handleBulkImport = async (data: any[]) => {
+    await api.syringes.bulkImport(data);
+    queryClient.invalidateQueries({ queryKey: ['syringes'] });
   };
 
   const handleConfirmDelete = async () => {
@@ -422,8 +436,11 @@ export default function SyringesRegistryPage() {
         breadcrumbs={[{ label: 'Master Data' }, { label: 'Syringes Registry' }]}
         actions={
           <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowBulkImport(true)}>
+              <Upload className="w-3.5 h-3.5" /> Import CSV
+            </Button>
             <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => exportSyringesCsv(syringes)}>
-              <Download className="w-3.5 h-3.5" /> CSV
+              <Download className="w-3.5 h-3.5" /> Exports CSV
             </Button>
             <div className="flex border border-border rounded-md overflow-hidden">
               <button onClick={() => setViewMode('grid')} className={cn('p-1.5 transition-colors', viewMode === 'grid' ? 'bg-gold/10 text-gold' : 'text-muted-foreground hover:bg-muted/50')}>
@@ -705,6 +722,40 @@ export default function SyringesRegistryPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {showBulkImport && (
+        <GenericBulkImport
+          title="Import Syringes"
+          subtitle="Add multiple syringes to the registry in bulk. Each syringe is permanently assigned to a perfume."
+          columns={SYRINGE_IMPORT_COLUMNS}
+          onImport={handleBulkImport}
+          onClose={() => setShowBulkImport(false)}
+          templateFilename="syringes-registry-template.csv"
+          templateExample={{
+            syringe_id: 'S/001',
+            size: '10ml',
+            custom_size_ml: '',
+            status: 'active',
+            assigned_master_id: 'P-NICHE-001',
+            dedicated_perfume_name: 'Brand — Fragrance',
+            use_count: '0',
+            notes: 'New syringe'
+          }}
+          transformRow={(raw) => {
+            return {
+              syringe_id: raw.syringe_id,
+              size: (raw.size || '5ml') as SyringeSize,
+              custom_size_ml: raw.custom_size_ml ? parseFloat(raw.custom_size_ml) : undefined,
+              status: (raw.status || 'active') as SyringeStatus,
+              assigned_master_id: raw.assigned_master_id,
+              dedicated_perfume_name: raw.dedicated_perfume_name,
+              use_count: parseInt(raw.use_count) || 0,
+              notes: raw.notes || '',
+              active: (raw.status !== 'retired' && raw.status !== 'damaged')
+            };
+          }}
+        />
+      )}
     </div>
   );
 }

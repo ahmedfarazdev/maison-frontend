@@ -4,7 +4,7 @@
 // ALL pages are now fully editable with inline editing
 // ============================================================
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { PageHeader, SectionCard, StatusBadge } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,6 +18,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { useTaxonomies } from '@/hooks/useTaxonomies';
 import { useTags } from '@/hooks/useTags';
@@ -132,114 +140,90 @@ function InlineTextarea({ value, onChange, className, rows = 2 }: {
   );
 }
 
-// ---- Aura Definitions (Editable) ----
+// ---- Aura Definitions (Editable via Dialog) ----
 export function AuraDefinitions() {
   const { aurasQuery, createAura, updateAura, deleteAura } = useTaxonomies();
-  const [localAuras, setLocalAuras] = useState<AuraDefinition[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState<Partial<AuraDefinition>>({});
+  const [keywordsText, setKeywordsText] = useState('');
+  const [editTargetId, setEditTargetId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (aurasQuery.data) setLocalAuras(aurasQuery.data as AuraDefinition[]);
-  }, [aurasQuery.data]);
-
-  const allAuras = localAuras.length ? localAuras : (aurasQuery.data as AuraDefinition[] || []);
+  const allAuras = (aurasQuery.data as AuraDefinition[]) || [];
   const isLoading = aurasQuery.isLoading;
   const hasError = Boolean(aurasQuery.error);
-  const isPending =
-    createAura.isPending ||
-    updateAura.isPending ||
-    deleteAura.isPending;
-
-  const startEdit = (a: AuraDefinition) => {
-    setEditingId(a.aura_id);
-    setEditForm({ ...a });
-    setExpanded(a.aura_id);
-  };
-
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditForm({});
-  };
+  const isPending = createAura.isPending || updateAura.isPending || deleteAura.isPending;
 
   const updateField = (field: keyof AuraDefinition, value: unknown) => {
     setEditForm(prev => ({ ...prev, [field]: value }));
   };
 
   const addAura = () => {
-    const newAura: AuraDefinition = {
-      aura_id: `aura-new-${Date.now()}`,
-      name: 'New Aura',
-      color: 'Red' as AuraColor,
-      color_hex: '#888888',
-      element: '',
-      keywords: [],
-      persona: '',
-      tagline: '',
-      description: '',
-      core_drive: '',
-      balance_aura: '',
-    };
-    setLocalAuras([...allAuras, newAura]);
-    startEdit(newAura);
+    setEditForm({
+      name: '', color: 'Red' as AuraColor, color_hex: '#E53935',
+      element: '', keywords: [], persona: '', tagline: '',
+      description: '', core_drive: '', balance_aura: '',
+    });
+    setKeywordsText('');
+    setEditTargetId(null);
+    setDialogOpen(true);
+  };
+
+  const startEdit = (a: AuraDefinition) => {
+    setEditForm({ ...a });
+    setKeywordsText((a.keywords || []).join(', '));
+    setEditTargetId(a.id || null);
+    setDialogOpen(true);
+  };
+
+  const cancelEdit = () => {
+    if (isPending) return;
+    setDialogOpen(false);
+    setEditForm({});
+    setKeywordsText('');
+    setEditTargetId(null);
   };
 
   const saveEdit = () => {
-    if (!editingId) return;
-    const current = allAuras.find(a => a.aura_id === editingId);
-    if (!current) return;
-
-    const merged = { ...current, ...editForm } as AuraDefinition;
-    const isNew = !current.id && current.aura_id.startsWith('aura-new-');
+    if (!editForm.name) return;
+    const isNew = !editTargetId;
     const auraId = isNew
-      ? makeUniqueId(merged.name || 'aura', allAuras.map(a => a.aura_id))
-      : merged.aura_id;
+      ? makeUniqueId(editForm.name || 'aura', allAuras.map(a => a.aura_id))
+      : editForm.aura_id || '';
     const payload = {
       aura_id: auraId,
-      name: merged.name || 'New Aura',
-      color: merged.color || 'Red',
-      color_hex: merged.color_hex || '#888888',
-      element: merged.element || '',
-      keywords: merged.keywords || [],
-      persona: merged.persona || '',
-      tagline: merged.tagline || '',
-      description: merged.description || '',
-      core_drive: merged.core_drive || '',
-      balance_aura: merged.balance_aura || '',
+      name: editForm.name || '',
+      color: editForm.color || 'Red',
+      color_hex: editForm.color_hex || '#888888',
+      element: editForm.element || '',
+      keywords: editForm.keywords || [],
+      persona: editForm.persona || '',
+      tagline: editForm.tagline || '',
+      description: editForm.description || '',
+      core_drive: editForm.core_drive || '',
+      balance_aura: editForm.balance_aura || '',
     };
     const options = {
       onSuccess: () => {
-        setLocalAuras(prev => prev.map(a => a.aura_id === current.aura_id
-          ? { ...a, ...merged, aura_id: auraId }
-          : a));
-        setEditingId(null);
+        setDialogOpen(false);
         setEditForm({});
-        setExpanded(auraId);
+        setEditTargetId(null);
       },
     };
-
     if (isNew) {
       createAura.mutate(payload, options);
-      return;
-    }
-
-    if (current.id) {
-      updateAura.mutate({ id: current.id, data: payload }, options);
+    } else if (editTargetId) {
+      updateAura.mutate({ id: editTargetId, data: payload }, options);
     }
   };
 
   const handleDelete = (target: AuraDefinition) => {
-    if (!target.id) {
-      setLocalAuras(prev => prev.filter(a => a.aura_id !== target.aura_id));
-      setEditingId(null);
-      setEditForm({});
-      return;
-    }
+    if (!target.id) return;
     deleteAura.mutate(target.id, {
       onSuccess: () => {
-        setEditingId(null);
+        setDialogOpen(false);
         setEditForm({});
+        setEditTargetId(null);
       },
     });
   };
@@ -281,9 +265,8 @@ export function AuraDefinitions() {
                 {allAuras.map(a => (
                   <button key={a.aura_id}
                     onClick={() => setExpanded(expanded === a.aura_id ? null : a.aura_id)}
-                    className={`flex items-center gap-2.5 px-4 py-2.5 rounded-full border-2 transition-all duration-200 ${
-                      expanded === a.aura_id ? 'shadow-lg scale-105' : 'hover:shadow-md hover:scale-[1.02]'
-                    }`}
+                    className={`flex items-center gap-2.5 px-4 py-2.5 rounded-full border-2 transition-all duration-200 ${expanded === a.aura_id ? 'shadow-lg scale-105' : 'hover:shadow-md hover:scale-[1.02]'
+                      }`}
                     style={{ borderColor: a.color_hex, backgroundColor: expanded === a.aura_id ? `${a.color_hex}15` : 'transparent' }}>
                     <div className="w-5 h-5 rounded-full" style={{ backgroundColor: a.color_hex }} />
                     <span className="text-sm font-semibold">{a.name}</span>
@@ -297,9 +280,6 @@ export function AuraDefinitions() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               {allAuras.map(a => {
                 const isOpen = expanded === a.aura_id;
-                const isEditing = editingId === a.aura_id;
-                const data = isEditing ? { ...a, ...editForm } as AuraDefinition : a;
-
                 return (
                   <div key={a.aura_id}
                     className={cn(
@@ -307,22 +287,22 @@ export function AuraDefinitions() {
                       isOpen ? 'ring-2 shadow-lg col-span-1 lg:col-span-2' : 'hover:shadow-md cursor-pointer',
                       AURA_BORDER[a.color]
                     )}
-                    onClick={() => !isEditing && setExpanded(isOpen ? null : a.aura_id)}>
+                    onClick={() => setExpanded(isOpen ? null : a.aura_id)}>
                     {/* Header bar */}
-                    <div className="flex items-center gap-4 p-5" style={{ borderBottom: `3px solid ${data.color_hex}` }}>
+                    <div className="flex items-center gap-4 p-5" style={{ borderBottom: `3px solid ${a.color_hex}` }}>
                       <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-                        style={{ backgroundColor: `${data.color_hex}20` }}>
-                        <div className="w-6 h-6 rounded-full" style={{ backgroundColor: data.color_hex }} />
+                        style={{ backgroundColor: `${a.color_hex}20` }}>
+                        <div className="w-6 h-6 rounded-full" style={{ backgroundColor: a.color_hex }} />
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <h3 className="text-base font-bold">{data.name}</h3>
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{data.color}</span>
+                          <h3 className="text-base font-bold">{a.name}</h3>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{a.color}</span>
                         </div>
-                        <p className="text-sm text-muted-foreground italic mt-0.5">"{data.tagline}"</p>
+                        <p className="text-sm text-muted-foreground italic mt-0.5">"{a.tagline}"</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        {!isEditing && isOpen && (
+                        {isOpen && (
                           <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7"
                             onClick={e => { e.stopPropagation(); startEdit(a); }}
                             disabled={isPending}>
@@ -348,110 +328,51 @@ export function AuraDefinitions() {
                       </div>
                     )}
 
-                    {/* Expanded detail (editable) */}
+                    {/* Expanded detail (read-only) */}
                     {isOpen && (
                       <div className={cn('p-5 space-y-5', AURA_BG[a.color])} onClick={e => e.stopPropagation()}>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                           <div className="space-y-4">
                             <div>
-                              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Name</label>
-                              {isEditing ? <InlineInput value={editForm.name || ''} onChange={v => updateField('name', v)} />
-                                : <p className="text-sm mt-1 font-medium">{data.name}</p>}
-                            </div>
-                            <div>
-                              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Tagline</label>
-                              {isEditing ? <InlineInput value={editForm.tagline || ''} onChange={v => updateField('tagline', v)} />
-                                : <p className="text-sm mt-1 italic">"{data.tagline}"</p>}
-                            </div>
-                            <div>
                               <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Persona</label>
-                              {isEditing ? <InlineInput value={editForm.persona || ''} onChange={v => updateField('persona', v)} />
-                                : <p className="text-sm mt-1 font-medium">{data.persona}</p>}
+                              <p className="text-sm mt-1 font-medium">{a.persona}</p>
                             </div>
                             <div>
                               <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Element</label>
-                              {isEditing ? <InlineInput value={editForm.element || ''} onChange={v => updateField('element', v)} />
-                                : <p className="text-sm mt-1">{data.element}</p>}
+                              <p className="text-sm mt-1">{a.element}</p>
                             </div>
                             <div>
-                              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Keywords (comma-separated)</label>
-                              {isEditing ? <InlineInput value={(editForm.keywords || []).join(', ')} onChange={v => updateField('keywords', v.split(',').map(s => s.trim()).filter(Boolean))} />
-                                : <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                    {(Array.isArray(data.keywords) ? data.keywords : []).map(k => (
-                                      <span key={k} className="text-xs px-2.5 py-1 rounded-full font-medium border"
-                                        style={{ borderColor: `${data.color_hex}40`, color: data.color_hex }}>{k}</span>
-                                    ))}
-                                  </div>}
+                              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Keywords</label>
+                              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {(Array.isArray(a.keywords) ? a.keywords : []).map(k => (
+                                  <span key={k} className="text-xs px-2.5 py-1 rounded-full font-medium border"
+                                    style={{ borderColor: `${a.color_hex}40`, color: a.color_hex }}>{k}</span>
+                                ))}
+                              </div>
                             </div>
                           </div>
                           <div className="space-y-4">
                             <div>
                               <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Description</label>
-                              {isEditing ? <InlineTextarea value={editForm.description || ''} onChange={v => updateField('description', v)} rows={3} />
-                                : <p className="text-sm mt-1 leading-relaxed">{data.description}</p>}
+                              <p className="text-sm mt-1 leading-relaxed">{a.description}</p>
                             </div>
                             <div>
                               <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Core Drive</label>
-                              {isEditing ? <InlineInput value={editForm.core_drive || ''} onChange={v => updateField('core_drive', v)} />
-                                : <p className="text-sm mt-1">{data.core_drive}</p>}
+                              <p className="text-sm mt-1">{a.core_drive}</p>
                             </div>
                             <div>
                               <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Balance Aura</label>
-                              {isEditing ? <InlineInput value={editForm.balance_aura || ''} onChange={v => updateField('balance_aura', v)} />
-                                : <p className="text-sm mt-1">{data.balance_aura}</p>}
+                              <p className="text-sm mt-1">{a.balance_aura}</p>
                             </div>
                             <div>
                               <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Color Hex</label>
-                              {isEditing ? (
-                                <div className="flex items-center gap-2 mt-1">
-                                  <input type="color" value={editForm.color_hex || data.color_hex}
-                                    onChange={e => updateField('color_hex', e.target.value)}
-                                    className="w-8 h-8 rounded border border-border cursor-pointer" />
-                                  <InlineInput value={editForm.color_hex || ''} onChange={v => updateField('color_hex', v)} className="max-w-[120px] font-mono" />
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2 mt-1">
-                                  <div className="w-5 h-5 rounded border border-border" style={{ backgroundColor: data.color_hex }} />
-                                  <span className="text-sm font-mono">{data.color_hex}</span>
-                                </div>
-                              )}
+                              <div className="flex items-center gap-2 mt-1">
+                                <div className="w-5 h-5 rounded border border-border" style={{ backgroundColor: a.color_hex }} />
+                                <span className="text-sm font-mono">{a.color_hex}</span>
+                              </div>
                             </div>
                           </div>
                         </div>
-                        {isEditing && (
-                          <div className="flex justify-end gap-2 pt-2 border-t border-border/50">
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button size="sm" variant="destructive" className="gap-1.5 mr-auto" disabled={isPending}>
-                                  <Trash2 className="w-3.5 h-3.5" /> Delete
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Delete {data.name}?</AlertDialogTitle>
-                                  <AlertDialogDescription>This action cannot be undone. This taxonomy might be referenced by several products.</AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel disabled={deleteAura.isPending}>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => handleDelete(data)}
-                                    className="bg-destructive hover:bg-destructive/90 text-white"
-                                    disabled={deleteAura.isPending}
-                                  >
-                                    {deleteAura.isPending ? <Loader2 className="w-3 h-3 animate-spin"/> : 'Yes, Delete'}
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                            <Button size="sm" variant="outline" onClick={cancelEdit} className="gap-1.5" disabled={isPending}>
-                              <X className="w-3.5 h-3.5" /> Cancel
-                            </Button>
-                            <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveEdit} disabled={isPending}>
-                              {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} 
-                              Save Changes
-                            </Button>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -461,11 +382,124 @@ export function AuraDefinitions() {
           </>
         )}
       </div>
+
+      {/* ---- Aura Add/Edit Dialog ---- */}
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) cancelEdit(); }}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: editForm.color_hex || '#888' }} />
+              {editTargetId ? 'Edit Aura Definition' : 'Add New Aura Definition'}
+            </DialogTitle>
+            <DialogDescription>
+              {editTargetId ? 'Update the aura definition details below.' : 'Fill in the details to create a new aura definition.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Name *</label>
+                <InlineInput value={editForm.name || ''} onChange={v => updateField('name', v)} placeholder="e.g. Amber" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Color</label>
+                <select value={editForm.color || 'Red'}
+                  onChange={e => updateField('color', e.target.value)}
+                  className="w-full bg-background border border-input rounded-md px-2.5 py-1.5 text-sm">
+                  {(['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Pink', 'Violet'] as AuraColor[]).map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Color Hex</label>
+                <div className="flex items-center gap-2">
+                  <input type="color" value={editForm.color_hex || '#888888'}
+                    onChange={e => updateField('color_hex', e.target.value)}
+                    className="w-8 h-8 rounded border border-border cursor-pointer" />
+                  <InlineInput value={editForm.color_hex || ''} onChange={v => updateField('color_hex', v)} className="max-w-[120px] font-mono" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Tagline</label>
+                <InlineInput value={editForm.tagline || ''} onChange={v => updateField('tagline', v)} placeholder="Short memorable phrase" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Persona</label>
+                <InlineInput value={editForm.persona || ''} onChange={v => updateField('persona', v)} placeholder="e.g. The Bold Leader" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Element</label>
+                <InlineInput value={editForm.element || ''} onChange={v => updateField('element', v)} placeholder="e.g. Fire" />
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Keywords (comma-separated)</label>
+                <InlineInput
+                  value={keywordsText}
+                  onChange={v => {
+                    setKeywordsText(v);
+                    updateField('keywords', v.split(',').map(s => s.trim()).filter(Boolean));
+                  }}
+                  placeholder="bold, intense, powerful"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Description</label>
+                <InlineTextarea value={editForm.description || ''} onChange={v => updateField('description', v)} rows={3} />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Core Drive</label>
+                <InlineInput value={editForm.core_drive || ''} onChange={v => updateField('core_drive', v)} placeholder="What drives this aura" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Balance Aura</label>
+                <InlineInput value={editForm.balance_aura || ''} onChange={v => updateField('balance_aura', v)} placeholder="Complementary aura" />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="flex-row justify-between sm:justify-between">
+            {editTargetId && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" variant="destructive" className="gap-1.5" disabled={isPending}>
+                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete {editForm.name}?</AlertDialogTitle>
+                    <AlertDialogDescription>This action cannot be undone. This aura might be referenced by several products.</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={deleteAura.isPending}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => handleDelete(editForm as AuraDefinition)}
+                      className="bg-destructive hover:bg-destructive/90 text-white"
+                      disabled={deleteAura.isPending}
+                    >
+                      {deleteAura.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes, Delete'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            <div className="flex gap-2 ml-auto">
+              <Button variant="outline" onClick={cancelEdit} disabled={isPending}>Cancel</Button>
+              <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveEdit} disabled={isPending || !editForm.name}>
+                {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                {isPending ? 'Saving...' : 'Save'}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-// ---- Fragrance Families (Editable) ----
+// ---- Fragrance Families (Editable via Dialogs) ----
 export function FragranceFamilies() {
   const {
     familiesQuery,
@@ -479,29 +513,27 @@ export function FragranceFamilies() {
   } = useTaxonomies();
   const [expandedFamily, setExpandedFamily] = useState<string | null>(null);
   const [expandedSub, setExpandedSub] = useState<string | null>(null);
-  const [editingFamily, setEditingFamily] = useState<Family | null>(null);
-  const [editingSub, setEditingSub] = useState<SubFamily | null>(null);
+
+  // Family dialog state
+  const [familyDialogOpen, setFamilyDialogOpen] = useState(false);
   const [familyForm, setFamilyForm] = useState<Partial<Family>>({});
+  const [familyTargetId, setFamilyTargetId] = useState<string | null>(null);
+
+  // Sub-Family dialog state
+  const [subDialogOpen, setSubDialogOpen] = useState(false);
   const [subForm, setSubForm] = useState<Partial<SubFamily>>({});
+  const [subKeyNotesText, setSubKeyNotesText] = useState('');
+  const [subMoodTagsText, setSubMoodTagsText] = useState('');
+  const [subTargetId, setSubTargetId] = useState<string | null>(null);
+
+  // Delete confirmations
   const [deleteFamilyTarget, setDeleteFamilyTarget] = useState<Family | null>(null);
   const [deleteSubTarget, setDeleteSubTarget] = useState<SubFamily | null>(null);
 
-  const [localFamilies, setLocalFamilies] = useState<Family[]>([]);
-  const [localSubs, setLocalSubs] = useState<SubFamily[]>([]);
-
-  useEffect(() => {
-    if (familiesQuery.data) setLocalFamilies(familiesQuery.data as Family[]);
-  }, [familiesQuery.data]);
-
-  useEffect(() => {
-    if (subFamiliesQuery.data) setLocalSubs(subFamiliesQuery.data as SubFamily[]);
-  }, [subFamiliesQuery.data]);
-
-  const families = localFamilies;
-  const subs = localSubs;
+  const families = (familiesQuery.data as Family[]) || [];
+  const subs = (subFamiliesQuery.data as SubFamily[]) || [];
 
   const isLoading = familiesQuery.isLoading || subFamiliesQuery.isLoading;
-  const hasError = Boolean(familiesQuery.error || subFamiliesQuery.error);
   const isSaving =
     createFamily.isPending ||
     updateFamily.isPending ||
@@ -519,18 +551,34 @@ export function FragranceFamilies() {
     FRESH: '#43A047', FLORAL: '#EC407A', ORIENTAL: '#FB8C00', WOODY: '#795548', MODERN: '#7B1FA2',
   };
 
-  const startEditFamily = (f: Family) => {
-    setEditingFamily(f);
-    setFamilyForm({ ...f });
-    setExpandedFamily(f.main_family_id);
+  // ---- Family Dialog Handlers ----
+  const addFamily = () => {
+    setFamilyForm({
+      name: '', tagline: '', description: '', display_order: families.length + 1,
+    });
+    setFamilyTargetId(null);
+    setFamilyDialogOpen(true);
   };
 
-  const saveFamilyEdit = async () => {
-    if (!editingFamily || !familyForm.name) return;
-    const isNew = !editingFamily.id && editingFamily.main_family_id.startsWith('fam-new-');
+  const startEditFamily = (f: Family) => {
+    setFamilyForm({ ...f });
+    setFamilyTargetId(f.id || null);
+    setFamilyDialogOpen(true);
+  };
+
+  const cancelFamilyEdit = () => {
+    if (isSaving) return;
+    setFamilyDialogOpen(false);
+    setFamilyForm({});
+    setFamilyTargetId(null);
+  };
+
+  const saveFamilyEdit = () => {
+    if (!familyForm.name) return;
+    const isNew = !familyTargetId;
     const familyId = isNew
       ? makeUniqueId(familyForm.name, families.map(f => f.main_family_id))
-      : editingFamily.main_family_id;
+      : familyForm.main_family_id || '';
     const payload = {
       main_family_id: familyId,
       name: familyForm.name,
@@ -540,37 +588,60 @@ export function FragranceFamilies() {
     };
     const options = {
       onSuccess: () => {
-        setEditingFamily(null);
+        setFamilyDialogOpen(false);
         setFamilyForm({});
+        setFamilyTargetId(null);
       },
     };
-
     if (isNew) {
       createFamily.mutate(payload, options);
-      return;
+    } else if (familyTargetId) {
+      updateFamily.mutate({ id: familyTargetId, data: payload }, options);
     }
+  };
 
-    if (editingFamily.id) {
-      updateFamily.mutate({ id: editingFamily.id, data: payload }, options);
-    }
+  // ---- Sub-Family Dialog Handlers ----
+  const addSubFamily = () => {
+    const parentId = expandedFamily || families[0]?.main_family_id || '';
+    setSubForm({
+      main_family_id: parentId, main_family_name: '',
+      ff_code: '', name: '', scent_dna: '', ritual_name: '', ritual_occasions: '',
+      aura_name: '', aura_color: 'Red' as AuraColor, key_notes: [], mood_tags: [],
+      description: '', scent_story: '',
+    });
+    setSubKeyNotesText('');
+    setSubMoodTagsText('');
+    setSubTargetId(null);
+    setSubDialogOpen(true);
   };
 
   const startEditSub = (s: SubFamily) => {
-    setEditingSub(s);
     setSubForm({ ...s });
-    setExpandedSub(s.sub_family_id);
+    setSubKeyNotesText((s.key_notes || []).join(', '));
+    setSubMoodTagsText((s.mood_tags || []).join(', '));
+    setSubTargetId(s.id || null);
+    setSubDialogOpen(true);
   };
 
-  const saveSubEdit = async () => {
-    if (!editingSub || !subForm.name) return;
-    const isNew = !editingSub.id && editingSub.sub_family_id.startsWith('sub-new-');
+  const cancelSubEdit = () => {
+    if (isSaving) return;
+    setSubDialogOpen(false);
+    setSubForm({});
+    setSubKeyNotesText('');
+    setSubMoodTagsText('');
+    setSubTargetId(null);
+  };
+
+  const saveSubEdit = () => {
+    if (!subForm.name) return;
+    const isNew = !subTargetId;
     const subFamilyId = isNew
       ? makeUniqueId(subForm.name, subs.map(s => s.sub_family_id))
-      : editingSub.sub_family_id;
+      : subForm.sub_family_id || '';
     const payload = {
       sub_family_id: subFamilyId,
-      ff_code: subForm.ff_code || editingSub.ff_code,
-      main_family_id: subForm.main_family_id || editingSub.main_family_id,
+      ff_code: subForm.ff_code || '',
+      main_family_id: subForm.main_family_id || '',
       name: subForm.name,
       scent_dna: subForm.scent_dna,
       ritual_name: subForm.ritual_name,
@@ -584,56 +655,22 @@ export function FragranceFamilies() {
     };
     const options = {
       onSuccess: () => {
-        setEditingSub(null);
+        setSubDialogOpen(false);
         setSubForm({});
+        setSubTargetId(null);
       },
     };
-
     if (isNew) {
       createSubFamily.mutate(payload, options);
-      return;
-    }
-
-    if (editingSub.id) {
+    } else if (subTargetId) {
       const { sub_family_id: _ignored, ...updatePayload } = payload;
-      updateSubFamily.mutate({ id: editingSub.id, data: updatePayload }, options);
+      updateSubFamily.mutate({ id: subTargetId, data: updatePayload }, options);
     }
   };
 
-  const addFamily = () => {
-    const newF: Family = {
-      main_family_id: `fam-new-${Date.now()}`, name: 'NEW FAMILY', tagline: 'Enter tagline',
-      description: '', display_order: families.length + 1, sub_families: [],
-    };
-    setLocalFamilies([...families, newF]);
-    startEditFamily(newF);
-  };
-
-  const addSubFamily = () => {
-    const parentId = expandedFamily || families[0]?.main_family_id || '';
-    const newS: SubFamily = {
-      sub_family_id: `sub-new-${Date.now()}`, main_family_id: parentId, main_family_name: '',
-      ff_code: 'FF-NEW', name: 'New Sub-Family', scent_dna: '', ritual_name: '', ritual_occasions: '',
-      aura_name: 'Red', aura_color: 'Red', key_notes: [], mood_tags: [],
-      description: '', scent_story: '',
-    };
-    setLocalSubs([...subs, newS]);
-    startEditSub(newS);
-  };
-
-  const requestDeleteFamily = (family: Family) => {
-    setDeleteFamilyTarget(family);
-  };
-
-  const requestDeleteSub = (sub: SubFamily) => {
-    setDeleteSubTarget(sub);
-  };
-
+  // ---- Delete Handlers ----
   const confirmDeleteFamily = () => {
-    if (!deleteFamilyTarget) return;
-    if (!deleteFamilyTarget.id) {
-      setLocalFamilies(families.filter(f => f.main_family_id !== deleteFamilyTarget.main_family_id));
-      setLocalSubs(subs.filter(s => s.main_family_id !== deleteFamilyTarget.main_family_id));
+    if (!deleteFamilyTarget?.id) {
       setDeleteFamilyTarget(null);
       return;
     }
@@ -643,9 +680,7 @@ export function FragranceFamilies() {
   };
 
   const confirmDeleteSub = () => {
-    if (!deleteSubTarget) return;
-    if (!deleteSubTarget.id) {
-      setLocalSubs(subs.filter(s => s.sub_family_id !== deleteSubTarget.sub_family_id));
+    if (!deleteSubTarget?.id) {
       setDeleteSubTarget(null);
       return;
     }
@@ -675,7 +710,6 @@ export function FragranceFamilies() {
         {families.sort((a, b) => a.display_order - b.display_order).map(f => {
           const familySubs = subs.filter(s => s.main_family_id === f.main_family_id);
           const isOpen = expandedFamily === f.main_family_id;
-          const isEditingF = editingFamily?.main_family_id === f.main_family_id;
           const color = FAMILY_COLORS[f.name] || '#888';
 
           return (
@@ -697,14 +731,14 @@ export function FragranceFamilies() {
                   <p className="text-sm italic mt-0.5" style={{ color }}>"{f.tagline}"</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {isOpen && !isEditingF && (
+                  {isOpen && (
                     <>
                       <Button size="sm" variant="outline" className="gap-1 text-xs h-7"
                         onClick={e => { e.stopPropagation(); startEditFamily(f); }}>
                         <Edit className="w-3 h-3" /> Edit
                       </Button>
                       <Button size="sm" variant="outline" className="gap-1 text-xs h-7 text-destructive hover:text-destructive"
-                        onClick={e => { e.stopPropagation(); requestDeleteFamily(f); }}
+                        onClick={e => { e.stopPropagation(); setDeleteFamilyTarget(f); }}
                         disabled={isSaving}>
                         <Trash2 className="w-3 h-3" />
                       </Button>
@@ -718,41 +752,15 @@ export function FragranceFamilies() {
 
               {isOpen && (
                 <div className="border-t border-border">
-                  <div className="px-5 py-4 bg-muted/20" onClick={e => e.stopPropagation()}>
-                    {isEditingF ? (
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Name</label>
-                            <InlineInput value={familyForm.name || ''} onChange={v => setFamilyForm(p => ({ ...p, name: v }))} />
-                          </div>
-                          <div>
-                            <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Tagline</label>
-                            <InlineInput value={familyForm.tagline || ''} onChange={v => setFamilyForm(p => ({ ...p, tagline: v }))} />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Description</label>
-                          <InlineTextarea value={familyForm.description || ''} onChange={v => setFamilyForm(p => ({ ...p, description: v }))} rows={3} />
-                        </div>
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => setEditingFamily(null)} className="gap-1.5" disabled={isSaving}>
-                            <X className="w-3.5 h-3.5" /> Cancel
-                          </Button>
-                          <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveFamilyEdit} disabled={isSaving}>
-                            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground leading-relaxed">{f.description}</p>
-                    )}
+                  {/* Read-only family description */}
+                  <div className="px-5 py-4 bg-muted/20">
+                    <p className="text-sm text-muted-foreground leading-relaxed">{f.description}</p>
                   </div>
 
+                  {/* Sub-families list */}
                   <div className="divide-y divide-border/50">
                     {familySubs.map(sub => {
                       const subOpen = expandedSub === sub.sub_family_id;
-                      const isEditingS = editingSub?.sub_family_id === sub.sub_family_id;
                       const auraHex = AURA_HEX[sub.aura_color] || '#888';
 
                       return (
@@ -771,14 +779,14 @@ export function FragranceFamilies() {
                             <div className="flex items-center gap-2 shrink-0">
                               <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
                                 style={{ backgroundColor: `${auraHex}15`, color: auraHex }}>{sub.aura_name}</span>
-                              {subOpen && !isEditingS && (
+                              {subOpen && (
                                 <>
                                   <Button size="sm" variant="outline" className="gap-1 text-xs h-6 px-2"
                                     onClick={e => { e.stopPropagation(); startEditSub(sub); }}>
                                     <Edit className="w-2.5 h-2.5" />
                                   </Button>
                                   <Button size="sm" variant="outline" className="gap-1 text-xs h-6 px-2 text-destructive hover:text-destructive"
-                                    onClick={e => { e.stopPropagation(); requestDeleteSub(sub); }}
+                                    onClick={e => { e.stopPropagation(); setDeleteSubTarget(sub); }}
                                     disabled={isSaving}>
                                     <Trash2 className="w-2.5 h-2.5" />
                                   </Button>
@@ -790,109 +798,48 @@ export function FragranceFamilies() {
                             </div>
                           </button>
 
+                          {/* Read-only sub-family detail */}
                           {subOpen && (
-                            <div className="px-5 pb-4 pt-1 ml-6 border-l-2" style={{ borderColor: `${auraHex}40` }}
-                              onClick={e => e.stopPropagation()}>
-                              {isEditingS ? (
+                            <div className="px-5 pb-4 pt-1 ml-6 border-l-2" style={{ borderColor: `${auraHex}40` }}>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-3">
-                                  <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Name</label>
-                                      <InlineInput value={subForm.name || ''} onChange={v => setSubForm(p => ({ ...p, name: v }))} />
-                                    </div>
-                                    <div>
-                                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">FF Code</label>
-                                      <InlineInput value={subForm.ff_code || ''} onChange={v => setSubForm(p => ({ ...p, ff_code: v }))} />
-                                    </div>
-                                    <div>
-                                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Scent DNA</label>
-                                      <InlineInput value={subForm.scent_dna || ''} onChange={v => setSubForm(p => ({ ...p, scent_dna: v }))} />
-                                    </div>
-                                    <div>
-                                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Ritual Name</label>
-                                      <InlineInput value={subForm.ritual_name || ''} onChange={v => setSubForm(p => ({ ...p, ritual_name: v }))} />
-                                    </div>
-                                    <div>
-                                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Ritual Occasions</label>
-                                      <InlineInput value={subForm.ritual_occasions || ''} onChange={v => setSubForm(p => ({ ...p, ritual_occasions: v }))} />
-                                    </div>
-                                    <div>
-                                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Aura Color</label>
-                                      <select value={subForm.aura_color || 'Red'}
-                                        onChange={e => setSubForm(p => ({ ...p, aura_color: e.target.value as AuraColor, aura_name: e.target.value }))}
-                                        className="w-full bg-background border border-input rounded-md px-2.5 py-1.5 text-sm">
-                                        {(['Red','Orange','Yellow','Green','Blue','Pink','Violet'] as AuraColor[]).map(c => (
-                                          <option key={c} value={c}>{c}</option>
-                                        ))}
-                                      </select>
-                                    </div>
+                                  <div>
+                                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Ritual Name</label>
+                                    <p className="text-sm mt-0.5 font-medium">{sub.ritual_name}</p>
                                   </div>
                                   <div>
-                                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Key Notes (comma-separated)</label>
-                                    <InlineInput value={(subForm.key_notes || []).join(', ')} onChange={v => setSubForm(p => ({ ...p, key_notes: v.split(',').map(s => s.trim()).filter(Boolean) }))} />
-                                  </div>
-                                  <div>
-                                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Mood Tags (comma-separated)</label>
-                                    <InlineInput value={(subForm.mood_tags || []).join(', ')} onChange={v => setSubForm(p => ({ ...p, mood_tags: v.split(',').map(s => s.trim()).filter(Boolean) }))} />
+                                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Ritual Occasions</label>
+                                    <p className="text-sm mt-0.5">{sub.ritual_occasions}</p>
                                   </div>
                                   <div>
                                     <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Description</label>
-                                    <InlineTextarea value={subForm.description || ''} onChange={v => setSubForm(p => ({ ...p, description: v }))} />
+                                    <p className="text-sm mt-0.5 leading-relaxed">{sub.description}</p>
                                   </div>
+                                </div>
+                                <div className="space-y-3">
                                   <div>
                                     <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Scent Story</label>
-                                    <InlineTextarea value={subForm.scent_story || ''} onChange={v => setSubForm(p => ({ ...p, scent_story: v }))} rows={3} />
+                                    <p className="text-sm mt-0.5 leading-relaxed italic text-muted-foreground">"{sub.scent_story}"</p>
                                   </div>
-                                  <div className="flex justify-end gap-2">
-                                    <Button size="sm" variant="outline" onClick={() => setEditingSub(null)} className="gap-1.5" disabled={isSaving}>
-                                      <X className="w-3.5 h-3.5" /> Cancel
-                                    </Button>
-                                    <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveSubEdit} disabled={isSaving}>
-                                      {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save
-                                    </Button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <div className="space-y-3">
-                                    <div>
-                                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Ritual Name</label>
-                                      <p className="text-sm mt-0.5 font-medium">{sub.ritual_name}</p>
-                                    </div>
-                                    <div>
-                                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Ritual Occasions</label>
-                                      <p className="text-sm mt-0.5">{sub.ritual_occasions}</p>
-                                    </div>
-                                    <div>
-                                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Description</label>
-                                      <p className="text-sm mt-0.5 leading-relaxed">{sub.description}</p>
+                                  <div>
+                                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Key Notes</label>
+                                    <div className="flex flex-wrap gap-1.5 mt-1">
+                                      {sub.key_notes.map(n => (
+                                        <span key={n} className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-foreground font-medium">{n}</span>
+                                      ))}
                                     </div>
                                   </div>
-                                  <div className="space-y-3">
-                                    <div>
-                                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Scent Story</label>
-                                      <p className="text-sm mt-0.5 leading-relaxed italic text-muted-foreground">"{sub.scent_story}"</p>
-                                    </div>
-                                    <div>
-                                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Key Notes</label>
-                                      <div className="flex flex-wrap gap-1.5 mt-1">
-                                        {sub.key_notes.map(n => (
-                                          <span key={n} className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-foreground font-medium">{n}</span>
-                                        ))}
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Mood Tags</label>
-                                      <div className="flex gap-1.5 mt-1">
-                                        {sub.mood_tags.map(t => (
-                                          <span key={t} className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                                            style={{ backgroundColor: `${auraHex}15`, color: auraHex }}>{t}</span>
-                                        ))}
-                                      </div>
+                                  <div>
+                                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Mood Tags</label>
+                                    <div className="flex gap-1.5 mt-1">
+                                      {sub.mood_tags.map(t => (
+                                        <span key={t} className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                                          style={{ backgroundColor: `${auraHex}15`, color: auraHex }}>{t}</span>
+                                      ))}
                                     </div>
                                   </div>
                                 </div>
-                              )}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -905,6 +852,159 @@ export function FragranceFamilies() {
           );
         })}
       </div>
+
+      {/* ---- Family Add/Edit Dialog ---- */}
+      <Dialog open={familyDialogOpen} onOpenChange={(open) => { if (!open) cancelFamilyEdit(); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{familyTargetId ? 'Edit Fragrance Family' : 'Add New Fragrance Family'}</DialogTitle>
+            <DialogDescription>
+              {familyTargetId ? 'Update the family details below.' : 'Fill in the details to create a new fragrance family.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Name *</label>
+              <InlineInput value={familyForm.name || ''} onChange={v => setFamilyForm(p => ({ ...p, name: v }))} placeholder="e.g. FLORAL" />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Tagline</label>
+              <InlineInput value={familyForm.tagline || ''} onChange={v => setFamilyForm(p => ({ ...p, tagline: v }))} placeholder="Short description" />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Description</label>
+              <InlineTextarea value={familyForm.description || ''} onChange={v => setFamilyForm(p => ({ ...p, description: v }))} rows={3} />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Display Order</label>
+              <InlineInput type="number" value={familyForm.display_order ?? 0} onChange={v => setFamilyForm(p => ({ ...p, display_order: Number(v) }))} />
+            </div>
+          </div>
+          <DialogFooter className="flex-row justify-between sm:justify-between">
+            {familyTargetId && (
+              <Button size="sm" variant="destructive" className="gap-1.5"
+                onClick={() => { const f = families.find(fam => fam.id === familyTargetId); if (f) { setFamilyDialogOpen(false); setDeleteFamilyTarget(f); } }}
+                disabled={isSaving}>
+                <Trash2 className="w-3.5 h-3.5" /> Delete
+              </Button>
+            )}
+            <div className="flex gap-2 ml-auto">
+              <Button variant="outline" onClick={cancelFamilyEdit} disabled={isSaving}>Cancel</Button>
+              <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveFamilyEdit} disabled={isSaving || !familyForm.name}>
+                {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                {isSaving ? 'Saving...' : 'Save'}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ---- Sub-Family Add/Edit Dialog ---- */}
+      <Dialog open={subDialogOpen} onOpenChange={(open) => { if (!open) cancelSubEdit(); }}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{subTargetId ? 'Edit Sub-Family' : 'Add New Sub-Family'}</DialogTitle>
+            <DialogDescription>
+              {subTargetId ? 'Update the sub-family details below.' : 'Fill in the details to create a new fragrance sub-family.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Name *</label>
+                <InlineInput value={subForm.name || ''} onChange={v => setSubForm(p => ({ ...p, name: v }))} placeholder="e.g. Rose Garden" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">FF Code</label>
+                <InlineInput value={subForm.ff_code || ''} onChange={v => setSubForm(p => ({ ...p, ff_code: v }))} placeholder="e.g. FF-FL-01" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Parent Family</label>
+                <select value={subForm.main_family_id || ''}
+                  onChange={e => setSubForm(p => ({ ...p, main_family_id: e.target.value }))}
+                  className="w-full bg-background border border-input rounded-md px-2.5 py-1.5 text-sm">
+                  <option value="">Select a family...</option>
+                  {families.map(f => (
+                    <option key={f.main_family_id} value={f.main_family_id}>{f.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Scent DNA</label>
+                <InlineInput value={subForm.scent_dna || ''} onChange={v => setSubForm(p => ({ ...p, scent_dna: v }))} placeholder="e.g. Warm, spicy" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Ritual Name</label>
+                <InlineInput value={subForm.ritual_name || ''} onChange={v => setSubForm(p => ({ ...p, ritual_name: v }))} />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Ritual Occasions</label>
+                <InlineInput value={subForm.ritual_occasions || ''} onChange={v => setSubForm(p => ({ ...p, ritual_occasions: v }))} />
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Aura Color</label>
+                <select value={subForm.aura_color || 'Red'}
+                  onChange={e => setSubForm(p => ({ ...p, aura_color: e.target.value as AuraColor, aura_name: e.target.value }))}
+                  className="w-full bg-background border border-input rounded-md px-2.5 py-1.5 text-sm">
+                  {(['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Pink', 'Violet'] as AuraColor[]).map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Key Notes (comma-separated)</label>
+                <InlineInput
+                  value={subKeyNotesText}
+                  onChange={v => {
+                    setSubKeyNotesText(v);
+                    setSubForm(p => ({ ...p, key_notes: v.split(',').map(s => s.trim()).filter(Boolean) }));
+                  }}
+                  placeholder="rose, jasmine, oud"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Mood Tags (comma-separated)</label>
+                <InlineInput
+                  value={subMoodTagsText}
+                  onChange={v => {
+                    setSubMoodTagsText(v);
+                    setSubForm(p => ({ ...p, mood_tags: v.split(',').map(s => s.trim()).filter(Boolean) }));
+                  }}
+                  placeholder="romantic, elegant"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Description</label>
+                <InlineTextarea value={subForm.description || ''} onChange={v => setSubForm(p => ({ ...p, description: v }))} rows={2} />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Scent Story</label>
+                <InlineTextarea value={subForm.scent_story || ''} onChange={v => setSubForm(p => ({ ...p, scent_story: v }))} rows={3} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="flex-row justify-between sm:justify-between">
+            {subTargetId && (
+              <Button size="sm" variant="destructive" className="gap-1.5"
+                onClick={() => { const s = subs.find(sub => sub.id === subTargetId); if (s) { setSubDialogOpen(false); setDeleteSubTarget(s); } }}
+                disabled={isSaving}>
+                <Trash2 className="w-3.5 h-3.5" /> Delete
+              </Button>
+            )}
+            <div className="flex gap-2 ml-auto">
+              <Button variant="outline" onClick={cancelSubEdit} disabled={isSaving}>Cancel</Button>
+              <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={saveSubEdit} disabled={isSaving || !subForm.name}>
+                {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                {isSaving ? 'Saving...' : 'Save'}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Family Confirmation */}
       <AlertDialog open={!!deleteFamilyTarget} onOpenChange={(open) => { if (!open && !deleteFamily.isPending) setDeleteFamilyTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -923,6 +1023,8 @@ export function FragranceFamilies() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Delete Sub-Family Confirmation */}
       <AlertDialog open={!!deleteSubTarget} onOpenChange={(open) => { if (!open && !deleteSubFamily.isPending) setDeleteSubTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -947,43 +1049,38 @@ export function FragranceFamilies() {
 
 // ---- Filters & Tags (Editable — DB-backed) ----
 export function FiltersAndTags() {
-  const [filters, setFilters] = useState({ ...mockFilterConfig });
+  const { filterTagsQuery, createFilterTag, deleteFilterTag } = useTaxonomies();
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Load filter tags from DB on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        setIsLoading(true);
-        const res = await api.master.filterTags();
-        if (res.data.length > 0) {
-          const grouped: Record<string, string[]> = {};
-          for (const tag of res.data as any[]) {
-            const cat = tag.category || tag.category;
-            if (!grouped[cat]) grouped[cat] = [];
-            grouped[cat].push(tag.value || tag.label);
-          }
-          setFilters(prev => {
-            const updated = { ...prev };
-            for (const [key, vals] of Object.entries(grouped)) {
-              if (key in updated) (updated as any)[key] = vals;
-            }
-            return updated;
-          });
-        }
-      } catch (e) {
-        console.warn('[Filters] Failed to load from DB, using defaults', e);
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
+  const filters = useMemo(() => {
+    const grouped: FilterConfig = {
+      aura_colors: [],
+      scent_types: [],
+      seasons: [],
+      occasions: [],
+      concentrations: [],
+      genders: [],
+      personalities: [],
+      main_families: [],
+      sub_families: [],
+    };
 
-  const sections: { title: string; key: keyof typeof filters; icon: React.ReactNode; colorFn?: (v: string) => string }[] = [
+    if (filterTagsQuery.data) {
+      for (const tag of filterTagsQuery.data) {
+        const cat = tag.category as keyof FilterConfig;
+        if (grouped[cat]) {
+          grouped[cat].push(tag.value);
+        }
+      }
+    }
+
+    return grouped;
+  }, [filterTagsQuery.data]);
+
+  const sections: { title: string; key: keyof FilterConfig; icon: React.ReactNode; colorFn?: (v: string) => string }[] = [
     { title: 'Aura Colors', key: 'aura_colors', icon: <Sparkles className="w-4 h-4" />, colorFn: (v) => AURA_HEX[v as AuraColor] || '#888' },
     { title: 'Scent Types', key: 'scent_types', icon: <Wind className="w-4 h-4" /> },
     { title: 'Seasons', key: 'seasons', icon: <Sun className="w-4 h-4" /> },
@@ -1015,26 +1112,34 @@ export function FiltersAndTags() {
     if (!editingKey) return;
     try {
       setIsSaving(true);
-      // Delete existing tags for this category, then re-create
-      const existingRes = await api.master.filterTags(editingKey);
-      for (const tag of (existingRes.data as any[])) {
-        if (tag.id) await api.mutations.filterTags.delete(tag.id);
+
+      const existingTags = filterTagsQuery.data?.filter(t => t.category === editingKey) || [];
+      const existingValues = existingTags.map(t => t.value);
+
+      // Calculate delta
+      const toDelete = existingTags.filter(t => !editValues.includes(t.value));
+      const toCreate = editValues.filter(v => !existingValues.includes(v));
+
+      // Execute removals
+      for (const tag of toDelete) {
+        await deleteFilterTag.mutateAsync(tag.id);
       }
-      // Create new tags
-      for (let i = 0; i < editValues.length; i++) {
-        await api.mutations.filterTags.create({
+
+      // Execute additions
+      for (let i = 0; i < toCreate.length; i++) {
+        await createFilterTag.mutateAsync({
           category: editingKey,
-          value: editValues[i],
-          label: editValues[i],
-          sortOrder: i,
+          value: toCreate[i],
+          label: toCreate[i],
+          sortOrder: editValues.indexOf(toCreate[i])
         });
       }
-      setFilters(prev => ({ ...prev, [editingKey!]: editValues }));
+
       setEditingKey(null);
-      toast.success('Tags saved to database');
+      toast.success('Tags updated successfully');
     } catch (e) {
       console.error('[Filters] Save failed:', e);
-      toast.error('Failed to save tags');
+      toast.error('Failed to update tags');
     } finally {
       setIsSaving(false);
     }
@@ -1048,7 +1153,7 @@ export function FiltersAndTags() {
         breadcrumbs={[{ label: 'Master Data' }, { label: 'Filters & Tags' }]}
       />
       <div className="p-6">
-        {isLoading ? (
+        {filterTagsQuery.isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="h-40 rounded-xl bg-card/30 animate-pulse" />

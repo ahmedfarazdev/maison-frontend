@@ -40,8 +40,16 @@ interface ParsedRow {
   warnings: string[];
 }
 
+export interface PerfumeBulkImportOutcome {
+  createdCount: number;
+  failedRows: Array<{ rowIndex: number; message: string }>;
+  syringeWarning?: string;
+}
+
+export type PerfumeBulkSyringeInput = Omit<Syringe, 'id'>;
+
 interface BulkCsvUploadProps {
-  onImport: (perfumes: Perfume[], syringes: Syringe[]) => void;
+  onImport: (perfumes: Perfume[], syringes: PerfumeBulkSyringeInput[]) => Promise<PerfumeBulkImportOutcome>;
   onClose: () => void;
   existingPerfumeCount: number; // for syringe ID sequencing
   brands: Brand[]; // for auto-detecting Made In
@@ -241,7 +249,7 @@ export default function BulkCsvUpload({ onImport, onClose, existingPerfumeCount,
   const validRows = parsed.filter(r => r.errors.length === 0);
   const invalidRows = parsed.filter(r => r.errors.length > 0);
 
-  const handleImport = () => {
+  const handleImport = async () => {
     if (validRows.length === 0) {
       toast.error('No valid rows to import');
       return;
@@ -249,7 +257,7 @@ export default function BulkCsvUpload({ onImport, onClose, existingPerfumeCount,
     setImporting(true);
 
     const perfumes = validRows.map(r => r.perfume as Perfume);
-    const syringes: Syringe[] = validRows.map((r, idx) => ({
+    const syringes: PerfumeBulkSyringeInput[] = validRows.map((r, idx) => ({
       syringe_id: r.syringeId,
       assigned_master_id: r.masterId,
       dedicated_perfume_name: `${r.raw.brand} ${r.raw.name}`,
@@ -262,11 +270,55 @@ export default function BulkCsvUpload({ onImport, onClose, existingPerfumeCount,
       created_at: new Date().toISOString(),
     }));
 
-    setTimeout(() => {
-      onImport(perfumes, syringes);
+    try {
+      const result = await onImport(perfumes, syringes);
+
+      const normalizedFailures = result.failedRows.map((row) => ({
+        rowIndex: validRows[row.rowIndex - 1]?.rowIndex ?? row.rowIndex,
+        message: row.message,
+      }));
+
+      if (normalizedFailures.length > 0) {
+        const failureByRow = new Map<number, string>(
+          normalizedFailures.map((row) => [row.rowIndex, row.message]),
+        );
+
+        setParsed((prev) => prev.map((row) => {
+          const failureMessage = failureByRow.get(row.rowIndex);
+          if (!failureMessage) return row;
+
+          if (row.errors.includes(failureMessage)) return row;
+          return { ...row, errors: [...row.errors, failureMessage] };
+        }));
+      }
+
+      if (result.syringeWarning) {
+        toast.warning('Perfumes saved but syringes were not fully created', {
+          description: result.syringeWarning,
+          duration: 7000,
+        });
+      }
+
+      if (result.createdCount > 0 && normalizedFailures.length === 0) {
+        toast.success(`Imported ${result.createdCount} perfumes successfully`);
+        onClose();
+        return;
+      }
+
+      if (result.createdCount > 0) {
+        toast.warning(
+          `Imported ${result.createdCount} perfumes, ${normalizedFailures.length} rows failed`,
+        );
+        return;
+      }
+
+      toast.error('No perfumes were imported');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Import failed';
+      toast.error(message);
+    } finally {
       setImporting(false);
-      toast.success(`Imported ${perfumes.length} perfumes with ${syringes.length} syringes`);
-    }, 800);
+    }
   };
 
   const downloadTemplate = () => {

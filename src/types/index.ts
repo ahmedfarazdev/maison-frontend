@@ -53,6 +53,7 @@ export interface DecantPricing {
 }
 
 export interface Perfume {
+  id?: string; // DB UUID used for update/delete on persisted records
   master_id: string;
   brand_id?: string;
   brand: string;
@@ -88,7 +89,7 @@ export interface Perfume {
   decant_pricing: DecantPricing[];
   in_stock: boolean;
   bottle_image_url: string;
-  bottle_images?: string[]; // multiple bottle images (drag-and-drop)
+  bottle_images?: string[];
   brand_image_url: string;
   created_at: string;
   updated_at: string;
@@ -296,6 +297,7 @@ export interface SupplierPurchase {
 export type SupplierProcType = 'perfume' | 'packaging' | 'both';
 
 export interface Supplier {
+  id?: string;
   supplier_id: string;
   type: SupplierType;
   supplier_type: SupplierProcType;

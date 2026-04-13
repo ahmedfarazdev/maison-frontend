@@ -7,6 +7,7 @@
 
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import { PageHeader, StatusBadge, SectionCard } from '@/components/shared';
+import GenericBulkImport, { type ImportColumn } from '@/components/shared/GenericBulkImport';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api-client';
@@ -1107,6 +1108,7 @@ export default function SuppliersPage() {
   const [editingSupplier, setEditingSupplier] = useState<Supplier | undefined>(undefined);
   const [editingBrandIds, setEditingBrandIds] = useState<string[]>([]);
   const [showCreatePO, setShowCreatePO] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
 
   const filtered = useMemo(() => {
     let result = suppliers.filter((s: Supplier) => {
@@ -1145,11 +1147,11 @@ export default function SuppliersPage() {
       delete mapped.supplier_type;
     }
     if (editingSupplier) {
-      await api.mutations.suppliers.update(editingSupplier.supplier_id, mapped);
+      await api.mutations.suppliers.update(editingSupplier.id || editingSupplier.supplier_id, mapped);
       await api.mutations.supplierBrands.set(editingSupplier.supplier_id, brandIds);
     } else {
       const result: any = await api.mutations.suppliers.create(mapped);
-      const newId = result?.supplierId || result?.supplier_id;
+      const newId = result?.supplierId || result?.supplier_id || result?.data?.supplierId || result?.data?.supplier_id;
       if (newId && brandIds.length > 0) {
         await api.mutations.supplierBrands.set(newId, brandIds);
       }
@@ -1223,6 +1225,9 @@ export default function SuppliersPage() {
                 <Clock className="w-3.5 h-3.5" /> {pendingPOCount} Active PO{pendingPOCount > 1 ? 's' : ''}
               </div>
             )}
+            <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowBulkImport(true)}>
+              <Upload className="w-3.5 h-3.5" /> Bulk Import
+            </Button>
             <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => exportSuppliersCsv(suppliers)}>
               <Download className="w-3.5 h-3.5" /> CSV
             </Button>
@@ -1403,6 +1408,40 @@ export default function SuppliersPage() {
           perfumes={perfumes}
           onClose={() => setShowCreatePO(false)}
           onCreated={handleRefresh}
+        />
+      )}
+      {showBulkImport && (
+        <GenericBulkImport<Supplier>
+          title="Bulk Import Suppliers"
+          subtitle="Upload a CSV file to add multiple suppliers at once."
+          columns={[
+            { key: 'supplier_id', label: 'Supplier ID', required: true, description: 'Unique identifier' },
+            { key: 'name', label: 'Company Name', required: true },
+            { key: 'type', label: 'Type', description: 'wholesaler, retailer, private_collector, direct' },
+            { key: 'contact_name', label: 'Contact Person' },
+            { key: 'contact_email', label: 'Email', required: true },
+            { key: 'contact_phone', label: 'Phone' },
+            { key: 'country', label: 'Country (ISO)' },
+            { key: 'city', label: 'City' },
+            { key: 'payment_terms', label: 'Payment Terms' },
+            { key: 'website', label: 'Website' },
+            { key: 'notes', label: 'Notes' },
+          ]}
+          onImport={async (data) => {
+            await api.suppliers.bulkImport(data);
+            refetchSuppliers();
+          }}
+          onClose={() => setShowBulkImport(false)}
+          templateFilename="maison_suppliers_template.csv"
+          templateExample={{
+            supplier_id: 'SUP-CHANEL',
+            name: 'Chanel S.A.',
+            type: 'direct',
+            contact_name: 'Alain Wertheimer',
+            contact_email: 'orders@chanel.com',
+            country: 'FR',
+            payment_terms: 'Net 30'
+          }}
         />
       )}
     </div>

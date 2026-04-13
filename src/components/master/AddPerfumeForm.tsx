@@ -393,6 +393,7 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
     }));
 
     const perfume: Perfume = {
+      id: isEditMode ? editPerfume?.id : undefined,
       master_id: masterId,
       brand_id: form.brand_id || undefined,
       brand: form.brand,
@@ -430,12 +431,12 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
       bottle_image_url: form.bottle_image_url || form.bottle_images[0] || 'https://images.unsplash.com/photo-1541643600914-78b084683601?w=200',
       bottle_images: form.bottle_images,
       brand_image_url: '',
-      created_at: new Date().toISOString(),
+      created_at: isEditMode ? (editPerfume?.created_at || new Date().toISOString()) : new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
     onSubmit(perfume);
-  }, [form, masterId, isEditMode, autoCalcPricePerMl, autoDecantPrices, autoMultiplier, autoSurchargeTier, onSubmit]);
+  }, [form, masterId, isEditMode, editPerfume, autoCalcPricePerMl, autoDecantPrices, autoMultiplier, autoSurchargeTier, onSubmit]);
 
   // ---- Shared styles ----
   const labelCls = 'text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1 block';

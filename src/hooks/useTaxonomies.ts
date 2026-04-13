@@ -82,10 +82,31 @@ export function useTaxonomies() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['subFamilies'] }),
   });
 
+  const filterTagsQuery = useQuery({
+    queryKey: ['filterTags'],
+    queryFn: async () => {
+      const res = await api.taxonomies.filterTags.list();
+      return res.data;
+    },
+  });
+
+  const createFilterTag = useMutation({
+    mutationFn: (data: any) => api.mutations.taxonomies.filterTags.create(data),
+    meta: { successMessage: 'Tag created successfully' },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['filterTags'] }),
+  });
+
+  const deleteFilterTag = useMutation({
+    mutationFn: (id: string) => api.mutations.taxonomies.filterTags.delete(id),
+    meta: { successMessage: 'Tag deleted successfully' },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['filterTags'] }),
+  });
+
   return {
-    aurasQuery, familiesQuery, subFamiliesQuery,
+    aurasQuery, familiesQuery, subFamiliesQuery, filterTagsQuery,
     createAura, updateAura, deleteAura,
     createFamily, updateFamily, deleteFamily,
     createSubFamily, updateSubFamily, deleteSubFamily,
+    createFilterTag, deleteFilterTag,
   };
 }
