@@ -5,12 +5,12 @@
 // Grid/Row toggle view
 // ============================================================
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageHeader, StatusBadge } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 // import { useApiQuery } from '@/hooks/useApiQuery';
-import { api, type PerfumeBulkImportMutationResult } from '@/lib/api-client';
+import { api, API_BASE, ACCESS_TOKEN_KEY, type PerfumeBulkImportMutationResult } from '@/lib/api-client';
 import {
   Search, Plus, X, Filter, ArrowUpDown, Upload, Pipette, Download,
   LayoutGrid, List, Droplets, Package, FlaskConical, Trash2, Pencil,
@@ -19,12 +19,13 @@ import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { Perfume, AuraColor, Syringe, InventoryBottle, DecantBottle } from '@/types';
-import AddPerfumeForm from '@/components/master/AddPerfumeForm';
+import AddPerfumeForm, { type PerfumeImageSubmitOptions } from '@/components/master/AddPerfumeForm';
 import BulkCsvUpload, { type PerfumeBulkSyringeInput } from '@/components/master/BulkCsvUpload';
 import PricingCalculator from '@/components/master/PricingCalculator';
 import { useBrands } from '@/hooks/useBrands';
 import { useTaxonomies } from '@/hooks/useTaxonomies';
 import { useSyringes } from '@/hooks/useSyringes';
+import imageCompression from 'browser-image-compression';
 
 const AURA_HEX: Record<AuraColor, string> = {
   Red: '#C41E3A', Blue: '#1B6B93', Violet: '#4A0E4E',
@@ -61,6 +62,11 @@ type PerfumeCsvImportResult = {
   createdCount: number;
   failedRows: Array<{ rowIndex: number; message: string }>;
   syringeWarning?: string;
+};
+
+type PerfumeFormSubmitPayload = {
+  perfume: Perfume;
+  imageOptions?: PerfumeImageSubmitOptions;
 };
 
 // ---- Inventory helpers ----
@@ -240,10 +246,122 @@ export default function PerfumeMaster() {
     return 0;
   };
 
+  const uploadCompressedImage = useCallback(async (file: File): Promise<string> => {
+    let preparedFile = file;
+
+    try {
+      const supportedTypes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+      if (supportedTypes.has(file.type)) {
+        const targetType = file.type === 'image/png' ? 'image/webp' : file.type;
+        const compressed = await imageCompression(file, {
+          useWebWorker: true,
+          initialQuality: 0.9,
+          maxWidthOrHeight: 2400,
+          fileType: targetType,
+        });
+
+        const ext = compressed.type === 'image/webp'
+          ? 'webp'
+          : compressed.type === 'image/jpeg'
+            ? 'jpg'
+            : compressed.type === 'image/png'
+              ? 'png'
+              : file.name.split('.').pop() || 'img';
+
+        const baseName = file.name.replace(/\.[^.]+$/, '');
+        preparedFile = new File([compressed], `${baseName}.${ext}`, {
+          type: compressed.type || file.type,
+          lastModified: Date.now(),
+        });
+      }
+    } catch (error) {
+      console.warn('Image compression failed; uploading original file', error);
+    }
+
+    const token = localStorage.getItem(ACCESS_TOKEN_KEY);
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const formData = new FormData();
+    formData.append('file', preparedFile);
+
+    const uploadUrl = new URL(`${API_BASE}/upload`);
+    uploadUrl.searchParams.append('folder', 'perfume-bottles');
+    uploadUrl.searchParams.append('bucket', 'perfume-images');
+
+    const response = await fetch(uploadUrl.toString(), {
+      method: 'POST',
+      body: formData,
+      headers,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({ error: 'Upload failed' }));
+      throw new Error(body.error || `Upload failed (${response.status})`);
+    }
+
+    const data = (await response.json()) as { url?: string };
+    if (!data.url) {
+      throw new Error('Upload response did not contain URL');
+    }
+
+    return data.url;
+  }, []);
+
+  const processPerfumeImagesInBackground = useCallback(async (perfumeId: string, options?: PerfumeImageSubmitOptions) => {
+    const pendingFiles = options?.pendingImageFiles ?? [];
+    const existingImageUrls = options?.existingImageUrls ?? [];
+
+    if (!perfumeId || pendingFiles.length === 0) {
+      return;
+    }
+
+    toast.info(`Processing ${pendingFiles.length} image(s) in background...`);
+
+    try {
+      const uploadedUrls: string[] = [];
+      for (const file of pendingFiles) {
+        const uploadedUrl = await uploadCompressedImage(file);
+        uploadedUrls.push(uploadedUrl);
+      }
+
+      const nextBottleImages = [...existingImageUrls, ...uploadedUrls];
+
+      await api.mutations.perfumes.update(perfumeId, {
+        bottleImageUrl: nextBottleImages[0] ?? null,
+        bottleImages: nextBottleImages,
+      });
+
+      await queryClient.invalidateQueries({ queryKey: PERFUME_MASTER_QUERY_KEYS.perfumes });
+      toast.success('Perfume images uploaded in background');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to process images in background';
+      toast.error(message);
+    }
+  }, [queryClient, uploadCompressedImage]);
+
+  const resolvePerfumeIdByMasterId = useCallback(async (perfume: Perfume): Promise<string | null> => {
+    if (perfume.id) {
+      return perfume.id;
+    }
+
+    try {
+      const response = await api.master.perfumes();
+      const all = (response.data || []) as Perfume[];
+      const match = all.find((candidate) => candidate.master_id === perfume.master_id);
+      return match?.id || null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const addPerfumeMutation = useMutation({
-    mutationFn: async (perfume: Perfume) => {
+    mutationFn: async ({ perfume, imageOptions }: PerfumeFormSubmitPayload) => {
       // 1. Create Perfume
-      await api.mutations.perfumes.create({
+      const created = await api.mutations.perfumes.create({
         masterId: perfume.master_id,
         brandId: perfume.brand_id || null,
         brand: perfume.brand,
@@ -283,6 +401,12 @@ export default function PerfumeMaster() {
         brandImageUrl: perfume.brand_image_url || null,
       });
 
+      const createdPerfumeId = (created as { id?: string } | null)?.id;
+      const createdPerfume = {
+        ...perfume,
+        id: createdPerfumeId || perfume.id,
+      };
+
       // 2. Determine robust Syringe ID (max sequence + 1 to avoid collisions)
       const refetchResult = await syringesQuery.refetch();
       const currentSyringes = refetchResult.data ?? syringesQuery.data ?? [];
@@ -292,10 +416,11 @@ export default function PerfumeMaster() {
 
       if (!currentSyringes.length && syringeListError) {
         return {
-          perfume,
+          perfume: createdPerfume,
           syringeId: undefined,
           syringeCreated: false,
           syringeError: `Unable to load syringes list: ${syringeListError}`,
+          imageOptions,
         };
       }
 
@@ -309,9 +434,9 @@ export default function PerfumeMaster() {
       try {
         await api.mutations.syringes.create({
           syringeId,
-          assignedMasterId: perfume.master_id,
-          dedicatedPerfumeName: `${perfume.brand} ${perfume.name}`,
-          dedicatedPerfumeId: perfume.master_id,
+          assignedMasterId: createdPerfume.master_id,
+          dedicatedPerfumeName: `${createdPerfume.brand} ${createdPerfume.name}`,
+          dedicatedPerfumeId: createdPerfume.master_id,
           sequenceNumber: nextSeq,
           size: '5ml',
           status: 'active',
@@ -325,9 +450,9 @@ export default function PerfumeMaster() {
         console.error('Syringe auto-creation failed:', err);
       }
 
-      return { perfume, syringeId, syringeCreated, syringeError };
+      return { perfume: createdPerfume, syringeId, syringeCreated, syringeError, imageOptions };
     },
-    onSuccess: ({ perfume, syringeId, syringeCreated, syringeError }) => {
+    onSuccess: ({ perfume, syringeId, syringeCreated, syringeError, imageOptions }) => {
       queryClient.invalidateQueries({ queryKey: [api.master.perfumes.name] });
       queryClient.invalidateQueries({ queryKey: [api.syringes.list.name] });
 
@@ -347,12 +472,23 @@ export default function PerfumeMaster() {
       }
 
       toast.info('To add stock, go to Station 0 → Stock Register', { duration: 5000 });
+
+      if (imageOptions?.pendingImageFiles?.length) {
+        void (async () => {
+          const perfumeId = await resolvePerfumeIdByMasterId(perfume);
+          if (!perfumeId) {
+            toast.warning('Perfume saved, but background image upload could not start. Please retry editing images.');
+            return;
+          }
+          await processPerfumeImagesInBackground(perfumeId, imageOptions);
+        })();
+      }
     },
     // Removed default meta.successMessage to avoid double toasts when syringeCreated is false
   });
 
   const editPerfumeMutation = useMutation({
-    mutationFn: async (perfume: Perfume) => {
+    mutationFn: async ({ perfume, imageOptions }: PerfumeFormSubmitPayload) => {
       const targetId = perfume.id || allPerfumes.find(p => p.master_id === perfume.master_id)?.id;
 
       if (!targetId) {
@@ -398,11 +534,15 @@ export default function PerfumeMaster() {
         brandImageUrl: perfume.brand_image_url || null,
       });
 
-      return perfume;
+      return { perfume, targetId, imageOptions };
     },
-    onSuccess: () => {
+    onSuccess: ({ targetId, imageOptions }) => {
       queryClient.invalidateQueries({ queryKey: PERFUME_MASTER_QUERY_KEYS.perfumes });
       setEditTarget(null);
+
+      if (targetId && imageOptions?.pendingImageFiles?.length) {
+        void processPerfumeImagesInBackground(targetId, imageOptions);
+      }
     },
     meta: { successMessage: 'Perfume updated successfully' }
   });
@@ -1237,7 +1377,7 @@ export default function PerfumeMaster() {
       {showAddForm && (
         <AddPerfumeForm
           onClose={() => setShowAddForm(false)}
-          onSubmit={(p) => addPerfumeMutation.mutate(p)}
+          onSubmit={(p, options) => addPerfumeMutation.mutate({ perfume: p, imageOptions: options })}
           isPending={addPerfumeMutation.isPending}
           families={familiesQuery.data || []}
           subFamilies={subFamiliesQuery.data || []}
@@ -1250,7 +1390,7 @@ export default function PerfumeMaster() {
       {editTarget && (
         <AddPerfumeForm
           onClose={() => setEditTarget(null)}
-          onSubmit={(p) => editPerfumeMutation.mutate(p)}
+          onSubmit={(p, options) => editPerfumeMutation.mutate({ perfume: p, imageOptions: options })}
           isPending={editPerfumeMutation.isPending}
           families={familiesQuery.data || []}
           subFamilies={subFamiliesQuery.data || []}

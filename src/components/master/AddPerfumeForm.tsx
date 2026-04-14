@@ -6,7 +6,7 @@
 // Currency: AED only
 // ============================================================
 
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -142,13 +142,18 @@ const INITIAL_STATE: FormState = {
 
 interface AddPerfumeFormProps {
   onClose: () => void;
-  onSubmit: (perfume: Perfume) => void;
+  onSubmit: (perfume: Perfume, options?: PerfumeImageSubmitOptions) => void;
   isPending?: boolean;
   families: { main_family_id: string; name: string }[];
   subFamilies: { sub_family_id: string; main_family_id: string; name: string }[];
   auras: { aura_id: string; name: string; color_hex: string }[];
   brands: Brand[];
   editPerfume?: Perfume;
+}
+
+export interface PerfumeImageSubmitOptions {
+  pendingImageFiles: File[];
+  existingImageUrls: string[];
 }
 
 export default function AddPerfumeForm({ onClose, onSubmit, isPending, families, subFamilies, auras, brands, editPerfume }: AddPerfumeFormProps) {
@@ -220,6 +225,7 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
 
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormState>(editInitialState || INITIAL_STATE);
+  const [pendingImageFiles, setPendingImageFiles] = useState<File[]>([]);
   const [brandSearch, setBrandSearch] = useState(editPerfume?.brand || '');
   const [showBrandDropdown, setShowBrandDropdown] = useState(false);
   // isDragging and fileInputRef removed — now handled by MultiImageUpload
@@ -351,7 +357,7 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
   // Step validation
   const stepValid = useMemo(() => {
     switch (step) {
-      case 0: return !!form.brand_id && !!form.brand && !!form.name && !!form.concentration && !!form.gender_target;
+      case 0: return !!form.brand.trim() && !!form.name.trim() && !!form.concentration && !!form.gender_target;
       case 1: return !!form.aura_color && !!form.hype_level && !!form.scent_type;
       case 2: return !!form.notes_top && !!form.notes_heart && !!form.notes_base;
       case 3: return !!form.wholesale_price && !!form.reference_size_ml;
@@ -386,6 +392,12 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
 
   // Submit handler
   const handleSubmit = useCallback(() => {
+    const normalizedBrand = form.brand.trim().toLowerCase();
+    const matchedBrand = normalizedBrand
+      ? brands.find((b) => b.name.trim().toLowerCase() === normalizedBrand)
+      : undefined;
+    const resolvedBrandId = form.brand_id || matchedBrand?.brand_id || undefined;
+
     const ppm = parseFloat(form.price_per_ml || autoCalcPricePerMl) || 0;
     const decantPricing: DecantPricing[] = DECANT_SIZES.map(size => ({
       size_ml: size,
@@ -395,8 +407,8 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
     const perfume: Perfume = {
       id: isEditMode ? editPerfume?.id : undefined,
       master_id: masterId,
-      brand_id: form.brand_id || undefined,
-      brand: form.brand,
+      brand_id: resolvedBrandId,
+      brand: form.brand.trim(),
       name: form.name,
       concentration: form.concentration as Concentration,
       gender_target: form.gender_target as 'masculine' | 'feminine' | 'unisex',
@@ -418,7 +430,7 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
       aura_verse: form.aura_verse,
       scent_prose: form.scent_prose,
       scent_story: form.scent_story,
-      made_in: form.made_in,
+      made_in: form.made_in || matchedBrand?.made_in || '',
       retail_price: parseFloat(form.retail_price) || 0,
       wholesale_price: parseFloat(form.wholesale_price) || 0,
       reference_size_ml: parseFloat(form.reference_size_ml) || 0,
@@ -428,15 +440,18 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
       surcharge_category: (form.surcharge_category || autoSurchargeTier?.s_category || 'S0') as Perfume['surcharge_category'],
       decant_pricing: decantPricing,
       in_stock: form.in_stock,
-      bottle_image_url: form.bottle_image_url || form.bottle_images[0] || 'https://images.unsplash.com/photo-1541643600914-78b084683601?w=200',
+      bottle_image_url: form.bottle_image_url || form.bottle_images[0] || '',
       bottle_images: form.bottle_images,
       brand_image_url: '',
       created_at: isEditMode ? (editPerfume?.created_at || new Date().toISOString()) : new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
-    onSubmit(perfume);
-  }, [form, masterId, isEditMode, editPerfume, autoCalcPricePerMl, autoDecantPrices, autoMultiplier, autoSurchargeTier, onSubmit]);
+    onSubmit(perfume, {
+      pendingImageFiles,
+      existingImageUrls: form.bottle_images,
+    });
+  }, [form, brands, masterId, isEditMode, editPerfume, autoCalcPricePerMl, autoDecantPrices, autoMultiplier, autoSurchargeTier, pendingImageFiles, onSubmit]);
 
   // ---- Shared styles ----
   const labelCls = 'text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1 block';
@@ -629,6 +644,7 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
                   <label className={labelCls}>Bottle Images</label>
                   <MultiImageUpload
                     images={form.bottle_images}
+                    pendingFiles={pendingImageFiles}
                     onChange={(urls) => {
                       setForm(prev => ({
                         ...prev,
@@ -636,6 +652,7 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
                         bottle_image_url: urls[0] || '',
                       }));
                     }}
+                    onPendingFilesChange={setPendingImageFiles}
                     folder="perfume-bottles"
                     maxImages={8}
                     maxSizeMB={10}

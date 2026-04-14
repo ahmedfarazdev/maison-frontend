@@ -701,7 +701,14 @@ export default function SyringesRegistryPage() {
       )}
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!syringeToDelete} onOpenChange={(open) => !open && setSyringeToDelete(null)}>
+      <AlertDialog
+        open={!!syringeToDelete}
+        onOpenChange={(open) => {
+          if (!open && !deleteSyringe.isPending) {
+            setSyringeToDelete(null);
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Syringe</AlertDialogTitle>
@@ -742,13 +749,20 @@ export default function SyringesRegistryPage() {
             notes: 'New syringe'
           }}
           transformRow={(raw) => {
+            // Extract sequence number from syringe_id (e.g., 'S/001' -> 1)
+            const syringeId = raw.syringe_id || '';
+            const seqMatch = syringeId.match(/(\d+)$/);
+            const sequenceNumber = seqMatch ? parseInt(seqMatch[1], 10) : 0;
+
             return {
-              syringe_id: raw.syringe_id,
-              size: (raw.size || '5ml') as SyringeSize,
+              syringe_id: syringeId,
+              sequence_number: sequenceNumber,
+              size: (raw.size || '10ml') as SyringeSize,
               custom_size_ml: raw.custom_size_ml ? parseFloat(raw.custom_size_ml) : undefined,
               status: (raw.status || 'active') as SyringeStatus,
               assigned_master_id: raw.assigned_master_id,
               dedicated_perfume_name: raw.dedicated_perfume_name,
+              dedicated_perfume_id: raw.assigned_master_id, // Usually same as master ID
               use_count: parseInt(raw.use_count) || 0,
               notes: raw.notes || '',
               active: (raw.status !== 'retired' && raw.status !== 'damaged')

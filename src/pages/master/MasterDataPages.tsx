@@ -16,7 +16,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
   Dialog,
@@ -145,6 +144,7 @@ export function AuraDefinitions() {
   const { aurasQuery, createAura, updateAura, deleteAura } = useTaxonomies();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState<Partial<AuraDefinition>>({});
   const [keywordsText, setKeywordsText] = useState('');
   const [editTargetId, setEditTargetId] = useState<string | null>(null);
@@ -166,6 +166,7 @@ export function AuraDefinitions() {
     });
     setKeywordsText('');
     setEditTargetId(null);
+    setDeleteDialogOpen(false);
     setDialogOpen(true);
   };
 
@@ -173,12 +174,14 @@ export function AuraDefinitions() {
     setEditForm({ ...a });
     setKeywordsText((a.keywords || []).join(', '));
     setEditTargetId(a.id || null);
+    setDeleteDialogOpen(false);
     setDialogOpen(true);
   };
 
   const cancelEdit = () => {
     if (isPending) return;
     setDialogOpen(false);
+    setDeleteDialogOpen(false);
     setEditForm({});
     setKeywordsText('');
     setEditTargetId(null);
@@ -221,6 +224,7 @@ export function AuraDefinitions() {
     if (!target.id) return;
     deleteAura.mutate(target.id, {
       onSuccess: () => {
+        setDeleteDialogOpen(false);
         setDialogOpen(false);
         setEditForm({});
         setEditTargetId(null);
@@ -461,12 +465,27 @@ export function AuraDefinitions() {
           </div>
           <DialogFooter className="flex-row justify-between sm:justify-between">
             {editTargetId && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button size="sm" variant="destructive" className="gap-1.5" disabled={isPending}>
-                    <Trash2 className="w-3.5 h-3.5" /> Delete
-                  </Button>
-                </AlertDialogTrigger>
+              <AlertDialog
+                open={deleteDialogOpen}
+                onOpenChange={(open) => {
+                  if (open) {
+                    setDeleteDialogOpen(true);
+                    return;
+                  }
+                  if (!deleteAura.isPending) {
+                    setDeleteDialogOpen(false);
+                  }
+                }}
+              >
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="gap-1.5"
+                  disabled={isPending}
+                  onClick={() => setDeleteDialogOpen(true)}
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </Button>
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete {editForm.name}?</AlertDialogTitle>
@@ -475,11 +494,16 @@ export function AuraDefinitions() {
                   <AlertDialogFooter>
                     <AlertDialogCancel disabled={deleteAura.isPending}>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                      onClick={() => handleDelete(editForm as AuraDefinition)}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        if (deleteAura.isPending) return;
+                        handleDelete(editForm as AuraDefinition);
+                      }}
                       className="bg-destructive hover:bg-destructive/90 text-white"
                       disabled={deleteAura.isPending}
                     >
-                      {deleteAura.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes, Delete'}
+                      {deleteAura.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                      {deleteAura.isPending ? 'Deleting...' : 'Yes, Delete'}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>

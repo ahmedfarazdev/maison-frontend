@@ -29,6 +29,11 @@ export default function DeleteConfirmDialog({
 }: DeleteConfirmDialogProps) {
   const [deleting, setDeleting] = useState(false);
 
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (deleting) return;
+    onOpenChange(nextOpen);
+  };
+
   const handleConfirm = async () => {
     setDeleting(true);
     try {
@@ -42,8 +47,15 @@ export default function DeleteConfirmDialog({
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+    <AlertDialog open={open} onOpenChange={handleDialogOpenChange}>
+      <AlertDialogContent
+        onPointerDownOutside={(event) => {
+          if (deleting) event.preventDefault();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (deleting) event.preventDefault();
+        }}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <Trash2 className="w-5 h-5 text-destructive" />
@@ -54,12 +66,16 @@ export default function DeleteConfirmDialog({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            onClick={handleConfirm}
+            onClick={(event) => {
+              event.preventDefault();
+              if (deleting) return;
+              void handleConfirm();
+            }}
             disabled={deleting}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
             {deleting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Trash2 className="w-4 h-4 mr-1" />}
-            Delete
+            {deleting ? 'Deleting...' : 'Delete'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

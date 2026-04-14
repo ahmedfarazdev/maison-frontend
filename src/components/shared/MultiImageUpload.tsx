@@ -1,18 +1,22 @@
 // ============================================================
-// MultiImageUpload — Multiple image upload to S3 with previews
+// MultiImageUpload — Deferred image selection with previews
+// Images are queued locally and processed in background after save.
 // ============================================================
 
-import { useState, useRef, useCallback, type DragEvent } from "react";
-import { useFileUpload, type UploadResult } from "@/hooks/useFileUpload";
-import { Upload, X, ImageIcon, Loader2, AlertCircle, Star } from "lucide-react";
+import { useState, useRef, useCallback, useMemo, useEffect, type DragEvent } from "react";
+import { Upload, X, Star, Clock3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 interface MultiImageUploadProps {
   /** Array of S3 URLs already uploaded */
   images: string[];
+  /** Pending local files that will be compressed/uploaded after form save */
+  pendingFiles: File[];
   /** Called whenever the image list changes */
   onChange: (urls: string[]) => void;
+  /** Called whenever pending local files change */
+  onPendingFilesChange: (files: File[]) => void;
   /** S3 folder prefix */
   folder?: string;
   /** Max number of images allowed */
@@ -25,7 +29,9 @@ interface MultiImageUploadProps {
 
 export function MultiImageUpload({
   images,
+  pendingFiles,
   onChange,
+  onPendingFilesChange,
   folder = "perfume-images",
   maxImages = 8,
   maxSizeMB = 10,
@@ -33,72 +39,84 @@ export function MultiImageUpload({
   disabled = false,
 }: MultiImageUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadingFiles, setUploadingFiles] = useState<{ id: string; name: string; preview: string; progress: number }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { upload, uploading } = useFileUpload({
-    folder,
-    maxSizeMB,
-    allowedTypes: ["image/jpeg", "image/png", "image/webp", "image/gif"],
-  });
+  const maxBytes = maxSizeMB * 1024 * 1024;
+
+  const pendingPreviewUrls = useMemo(
+    () => pendingFiles.map((file) => URL.createObjectURL(file)),
+    [pendingFiles]
+  );
+
+  useEffect(() => {
+    return () => {
+      pendingPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [pendingPreviewUrls]);
+
+  const combinedImages = useMemo(
+    () => [
+      ...images.map((url) => ({ kind: "uploaded" as const, url })),
+      ...pendingFiles.map((file, index) => ({
+        kind: "pending" as const,
+        file,
+        previewUrl: pendingPreviewUrls[index],
+      })),
+    ],
+    [images, pendingFiles, pendingPreviewUrls]
+  );
+
+  const syncCombinedImages = useCallback(
+    (
+      entries: Array<
+        | { kind: "uploaded"; url: string }
+        | { kind: "pending"; file: File; previewUrl: string }
+      >
+    ) => {
+      onChange(entries.filter((entry) => entry.kind === "uploaded").map((entry) => entry.url));
+      onPendingFilesChange(entries.filter((entry) => entry.kind === "pending").map((entry) => entry.file));
+    },
+    [onChange, onPendingFilesChange]
+  );
 
   const handleFiles = useCallback(
-    async (files: File[]) => {
+    (files: File[]) => {
       if (disabled) return;
-      const remaining = maxImages - images.length;
+
+      const remaining = maxImages - combinedImages.length;
       if (remaining <= 0) {
         toast.error(`Maximum ${maxImages} images allowed`);
         return;
       }
-      const toUpload = files.slice(0, remaining);
+
+      const toQueue = files.slice(0, remaining);
       if (files.length > remaining) {
         toast.warning(`Only ${remaining} more image(s) can be added`);
       }
 
-      // Create preview entries
-      const entries = toUpload.map((file, i) => ({
-        id: `${Date.now()}-${i}`,
-        name: file.name,
-        preview: URL.createObjectURL(file),
-        progress: 0,
-      }));
-      setUploadingFiles(prev => [...prev, ...entries]);
-
-      // Upload each file
-      const results: string[] = [];
-      for (let i = 0; i < toUpload.length; i++) {
-        const file = toUpload[i];
-        const entry = entries[i];
-
-        setUploadingFiles(prev =>
-          prev.map(e => (e.id === entry.id ? { ...e, progress: 30 } : e))
-        );
-
-        try {
-          const result = await upload(file);
-          if (result) {
-            results.push(result.url);
-            setUploadingFiles(prev =>
-              prev.map(e => (e.id === entry.id ? { ...e, progress: 100 } : e))
-            );
-          }
-        } catch (err) {
-          toast.error(`Failed to upload ${file.name}`);
+      const validFiles: File[] = [];
+      for (const file of toQueue) {
+        if (!file.type.startsWith("image/")) {
+          toast.error(`Skipped non-image file: ${file.name}`);
+          continue;
         }
 
-        // Remove from uploading list after a brief delay
-        setTimeout(() => {
-          setUploadingFiles(prev => prev.filter(e => e.id !== entry.id));
-          URL.revokeObjectURL(entry.preview);
-        }, 500);
+        if (file.size > maxBytes) {
+          toast.error(`Skipped ${file.name}: exceeds ${maxSizeMB}MB`);
+          continue;
+        }
+
+        validFiles.push(file);
       }
 
-      if (results.length > 0) {
-        onChange([...images, ...results]);
-        toast.success(`${results.length} image(s) uploaded`);
+      if (validFiles.length === 0) {
+        return;
       }
+
+      onPendingFilesChange([...pendingFiles, ...validFiles]);
+      toast.success(`${validFiles.length} image(s) queued for background upload`);
     },
-    [disabled, images, maxImages, onChange, upload]
+    [disabled, maxImages, combinedImages.length, maxBytes, maxSizeMB, pendingFiles, onPendingFilesChange]
   );
 
   const handleDrop = useCallback(
@@ -124,24 +142,21 @@ export function MultiImageUpload({
     [handleFiles]
   );
 
-  const removeImage = useCallback(
-    (index: number) => {
-      const updated = images.filter((_, i) => i !== index);
-      onChange(updated);
-    },
-    [images, onChange]
-  );
+  const removeImage = useCallback((index: number) => {
+    const reordered = combinedImages.filter((_, i) => i !== index);
+    syncCombinedImages(reordered);
+  }, [combinedImages, syncCombinedImages]);
 
   const setPrimary = useCallback(
     (index: number) => {
       if (index === 0) return;
-      const updated = [...images];
-      const [moved] = updated.splice(index, 1);
-      updated.unshift(moved);
-      onChange(updated);
+      const reordered = [...combinedImages];
+      const [moved] = reordered.splice(index, 1);
+      reordered.unshift(moved);
+      syncCombinedImages(reordered);
       toast.success("Primary image updated");
     },
-    [images, onChange]
+    [combinedImages, syncCombinedImages]
   );
 
   return (
@@ -179,44 +194,35 @@ export function MultiImageUpload({
             : "Drag & drop images or click to browse"}
         </p>
         <p className="text-[10px] text-muted-foreground mt-1">
-          PNG, JPG, WebP — up to {maxSizeMB}MB each — {images.length}/{maxImages} uploaded
+          Folder: {folder} · PNG, JPG, WebP, GIF · up to {maxSizeMB}MB each · {combinedImages.length}/{maxImages} selected
+        </p>
+        <p className="text-[10px] text-muted-foreground mt-0.5">
+          Compression (~90 quality) and upload happen in background after save.
         </p>
       </div>
 
-      {/* Uploading previews */}
-      {uploadingFiles.length > 0 && (
+      {/* Selected images (uploaded + queued) */}
+      {combinedImages.length > 0 && (
         <div className="flex flex-wrap gap-3">
-          {uploadingFiles.map(entry => (
-            <div key={entry.id} className="relative w-20 h-20 rounded-lg overflow-hidden border border-border">
-              <img
-                src={entry.preview}
-                alt={entry.name}
-                className="w-full h-full object-cover opacity-50"
-              />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Loader2 className="w-5 h-5 text-gold animate-spin" />
-              </div>
-              <div className="absolute bottom-0 left-0 right-0 h-1 bg-muted">
-                <div
-                  className="h-full bg-gold transition-all duration-300"
-                  style={{ width: `${entry.progress}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+          {combinedImages.map((entry, i) => {
+            const src = entry.kind === "uploaded" ? entry.url : entry.previewUrl;
+            const key = entry.kind === "uploaded"
+              ? `uploaded-${entry.url}-${i}`
+              : `pending-${entry.file.name}-${entry.file.lastModified}-${i}`;
 
-      {/* Uploaded images */}
-      {images.length > 0 && (
-        <div className="flex flex-wrap gap-3">
-          {images.map((url, i) => (
-            <div key={`${url}-${i}`} className="relative group">
+            return (
+            <div key={key} className="relative group">
               <img
-                src={url}
+                src={src}
                 alt={`Image ${i + 1}`}
                 className="w-20 h-20 object-cover rounded-lg border border-border"
               />
+              {entry.kind === "pending" && (
+                <span className="absolute top-0.5 left-0.5 inline-flex items-center gap-1 text-[8px] bg-black/70 text-white px-1.5 py-0.5 rounded">
+                  <Clock3 className="w-2.5 h-2.5" />
+                  Queued
+                </span>
+              )}
               {/* Primary badge */}
               {i === 0 && (
                 <span className="absolute bottom-0.5 left-0.5 text-[8px] bg-gold text-gold-foreground px-1 rounded font-medium">
@@ -247,7 +253,8 @@ export function MultiImageUpload({
                 <X className="w-3 h-3" />
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

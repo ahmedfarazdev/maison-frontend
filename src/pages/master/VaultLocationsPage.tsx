@@ -33,7 +33,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 
 // ---- Constants ----
@@ -225,8 +224,8 @@ function AddZoneDialog({ onAdd, onClose, existingZones, isCreating }: {
         const slotStr = String(sl).padStart(2, '0');
         const code = generateLocationCode(vault, zoneId, String(s), slotStr);
         newLocs.push({
-          location_id: `loc_new_${Date.now()}_${s}_${sl}`,
-          location_code: code,
+          locationId: `loc_new_${Date.now()}_${s}_${sl}`,
+          locationCode: code,
           vault,
           zone: zoneId,
           shelf: String(s),
@@ -268,7 +267,7 @@ function AddZoneDialog({ onAdd, onClose, existingZones, isCreating }: {
           <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold block mb-1.5">Zone ID</label>
-              <Input value={zoneId} onChange={e => setZoneId(e.target.value.toUpperCase())} placeholder="C" className="font-mono" maxLength={3} />
+              <Input value={zoneId} onChange={e => setZoneId(e.target.value)} placeholder="C" className="font-mono" maxLength={32} />
             </div>
             <div className="col-span-2">
               <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold block mb-1.5">Zone Name (optional)</label>
@@ -342,6 +341,8 @@ function AssignPerfumeDialog({ location, onAssign, onClear, onDelete, isAssignin
   const [searchResults, setSearchResults] = useState<SearchablePerfume[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedPerfume, setSelectedPerfume] = useState<SearchablePerfume | null>(null);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   // Search for perfumes
   useEffect(() => {
@@ -414,14 +415,28 @@ function AssignPerfumeDialog({ location, onAssign, onClear, onDelete, isAssignin
                 <p className="text-sm font-semibold mt-1">{location.perfume_name || 'Unknown'}</p>
                 <p className="text-[11px] font-mono text-muted-foreground mt-0.5">{location.master_id || '—'}</p>
               </div>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" className="w-full gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/5"
-                    disabled={isClearing}>
-                    {isClearing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                    {isClearing ? 'Clearing...' : 'Clear Slot'}
-                  </Button>
-                </AlertDialogTrigger>
+              <Button
+                variant="outline"
+                className="w-full gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/5"
+                disabled={isClearing}
+                onClick={() => setClearDialogOpen(true)}
+              >
+                {isClearing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                {isClearing ? 'Clearing...' : 'Clear Slot'}
+              </Button>
+              <AlertDialog
+                open={clearDialogOpen}
+                onOpenChange={(open) => {
+                  if (open) {
+                    setClearDialogOpen(true);
+                    return;
+                  }
+
+                  if (!isClearing) {
+                    setClearDialogOpen(false);
+                  }
+                }}
+              >
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>Clear Slot Contents</AlertDialogTitle>
@@ -431,7 +446,15 @@ function AssignPerfumeDialog({ location, onAssign, onClear, onDelete, isAssignin
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel disabled={isClearing}>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => onClear(location.id ?? location.location_id)} disabled={isClearing} className="bg-destructive hover:bg-destructive/90">
+                    <AlertDialogAction
+                      onClick={(event) => {
+                        event.preventDefault();
+                        if (isClearing) return;
+                        onClear(location.id ?? location.location_id);
+                      }}
+                      disabled={isClearing}
+                      className="bg-destructive hover:bg-destructive/90"
+                    >
                       {isClearing ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
                       {isClearing ? 'Clearing...' : 'Clear Slot'}
                     </AlertDialogAction>
@@ -486,13 +509,28 @@ function AssignPerfumeDialog({ location, onAssign, onClear, onDelete, isAssignin
         </div>
         {!location.occupied && (
           <div className="flex items-center justify-between px-6 py-4 border-t border-border">
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" className="text-destructive border-destructive/30 hover:bg-destructive/5 gap-1.5" disabled={isDeleting}>
-                  {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                  {isDeleting ? 'Deleting...' : 'Delete Slot'}
-                </Button>
-              </AlertDialogTrigger>
+            <Button
+              variant="outline"
+              className="text-destructive border-destructive/30 hover:bg-destructive/5 gap-1.5"
+              disabled={isDeleting}
+              onClick={() => setDeleteDialogOpen(true)}
+            >
+              {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              {isDeleting ? 'Deleting...' : 'Delete Slot'}
+            </Button>
+            <AlertDialog
+              open={deleteDialogOpen}
+              onOpenChange={(open) => {
+                if (open) {
+                  setDeleteDialogOpen(true);
+                  return;
+                }
+
+                if (!isDeleting) {
+                  setDeleteDialogOpen(false);
+                }
+              }}
+            >
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete Location Slot</AlertDialogTitle>
@@ -502,7 +540,15 @@ function AssignPerfumeDialog({ location, onAssign, onClear, onDelete, isAssignin
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => onDelete(location.id ?? location.location_id)} disabled={isDeleting} className="bg-destructive hover:bg-destructive/90">
+                  <AlertDialogAction
+                    onClick={(event) => {
+                      event.preventDefault();
+                      if (isDeleting) return;
+                      onDelete(location.id ?? location.location_id);
+                    }}
+                    disabled={isDeleting}
+                    className="bg-destructive hover:bg-destructive/90"
+                  >
                     {isDeleting ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
                     {isDeleting ? 'Deleting...' : 'Delete Slot'}
                   </AlertDialogAction>
@@ -1414,12 +1460,22 @@ export default function VaultLocationsPage() {
             const zone = raw.zone || 'A';
             const shelf = raw.shelf || '1';
             const slot = raw.slot || '01';
+            const locationCode = generateLocationCode(vault, zone, shelf, slot);
+            
+            // Generate a more robust unique ID
+            const uniqueId = typeof crypto.randomUUID === 'function' 
+              ? crypto.randomUUID() 
+              : `loc_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+            
             return {
+              locationId: uniqueId,
+              locationCode,
               vault,
               zone,
               shelf,
               slot,
-              locationCode: generateLocationCode(vault, zone, shelf, slot),
+              position: slot,
+              code: locationCode,
               type: raw.type || 'sealed',
               occupied: (raw.occupied || 'No').toLowerCase() === 'yes',
               masterId: raw.master_id || null,

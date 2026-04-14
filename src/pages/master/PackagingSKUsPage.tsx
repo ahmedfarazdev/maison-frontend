@@ -430,6 +430,7 @@ export default function PackagingSKUsPage() {
   const [linkedSupplierIds, setLinkedSupplierIds] = useState<string[]>([]);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [deleteConfirmSku, setDeleteConfirmSku] = useState<string | null>(null);
+  const [isDeletingSku, setIsDeletingSku] = useState(false);
 
   const filtered = useMemo(() => {
     return skus.filter(s => {
@@ -532,30 +533,48 @@ export default function PackagingSKUsPage() {
   }
 
   const confirmDelete = async () => {
-    if (!deleteConfirmSku) return;
+    if (!deleteConfirmSku || isDeletingSku) return;
+
+    setIsDeletingSku(true);
     try {
       await api.mutations.packagingSkus.delete(deleteConfirmSku);
       queryClient.invalidateQueries({ queryKey: ['packagingSKUs'] });
       toast.success(`SKU ${deleteConfirmSku} deleted`);
+      setDeleteConfirmSku(null);
     } catch (e: any) {
       toast.error(e.message || 'Failed to delete SKU');
     } finally {
-      setDeleteConfirmSku(null);
+      setIsDeletingSku(false);
     }
   };
 
   return (
     <div>
-      <AlertDialog open={!!deleteConfirmSku} onOpenChange={(open) => !open && setDeleteConfirmSku(null)}>
+      <AlertDialog
+        open={!!deleteConfirmSku}
+        onOpenChange={(open) => {
+          if (!open && !isDeletingSku) {
+            setDeleteConfirmSku(null);
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogTitle>Delete SKU</AlertDialogTitle>
           <AlertDialogDescription>
             Are you sure you want to delete SKU {deleteConfirmSku}? This action cannot be undone.
           </AlertDialogDescription>
           <div className="flex justify-end gap-3 mt-4">
-            <AlertDialogCancel onClick={() => setDeleteConfirmSku(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Delete
+            <AlertDialogCancel disabled={isDeletingSku} onClick={() => setDeleteConfirmSku(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmDelete();
+              }}
+              disabled={isDeletingSku}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingSku ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
+              {isDeletingSku ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
           </div>
         </AlertDialogContent>
@@ -767,11 +786,11 @@ export default function PackagingSKUsPage() {
               name,
               category,
               sizeSpec,
-              colorVariant: raw.color_variant || '',
+              colorVariant,
               type: raw.type || 'other',
-              requiresPrint: false,
-              requiresInlay: false,
-              requiresQc: false,
+              requiresPrint: (raw.requires_print || 'No').toLowerCase() === 'yes',
+              requiresInlay: (raw.requires_inlay || 'No').toLowerCase() === 'yes',
+              requiresQc: (raw.requires_qc || 'No').toLowerCase() === 'yes',
               unit: raw.unit || 'pc',
               minStockLevel: parseInt(raw.min_stock_level) || 50,
               active: (raw.active || 'Yes').toLowerCase() !== 'no'

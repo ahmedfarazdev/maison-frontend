@@ -6,6 +6,7 @@ import { useState, useMemo, useCallback, useRef } from 'react';
 import { useBrands } from '@/hooks/useBrands';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { PageHeader } from '@/components/shared';
+import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog';
 import GenericBulkImport, { type ImportColumn } from '@/components/shared/GenericBulkImport';
 import { api } from '@/lib/api-client';
 import type { Brand, BrandInsights, Perfume, AuraColor } from '@/types';
@@ -14,11 +15,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { 
-  AlertDialog, AlertDialogAction, AlertDialogCancel, 
-  AlertDialogContent, AlertDialogDescription, AlertDialogFooter, 
-  AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger 
-} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { useFileUpload } from '@/hooks/useFileUpload';
 import { cn } from '@/lib/utils';
@@ -112,7 +108,7 @@ function BrandDetail({ brand, perfumes, insights, isLoading, onBack, onEdit, onD
   isLoading?: boolean;
   onBack: () => void;
   onEdit: (b: Brand) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<void>;
   isDeleting?: boolean;
 }) {
   const { hasRole, hasPermission } = useAuth();
@@ -135,6 +131,7 @@ function BrandDetail({ brand, perfumes, insights, isLoading, onBack, onEdit, onD
   const [editNotes, setEditNotes] = useState(brand.notes || '');
   const [editLogoUrl, setEditLogoUrl] = useState(brand.logo_url || '');
   const [showAnalytics, setShowAnalytics] = useState(true);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const handleSave = () => {
     onEdit({ ...brand, name: editName, made_in: editMadeIn, notes: editNotes, logo_url: editLogoUrl || undefined });
@@ -257,40 +254,27 @@ function BrandDetail({ brand, perfumes, insights, isLoading, onBack, onEdit, onD
             ) : (
               <>
                 {canDelete && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        disabled={isDeleting || deleteBlocked}
-                        title={deleteBlocked ? deleteDisabledReason : undefined}
-                      >
-                        {isDeleting ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
-                        {isDeleting ? 'Deleting...' : 'Delete'}
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This action cannot be undone. This will permanently delete the brand <strong>{brand.name}</strong> from our servers.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={(e) => {
-                            e.preventDefault();
-                            onDelete(brand.id || brand.brand_id);
-                          }}
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          disabled={isDeleting || deleteBlocked}
-                        >
-                          {isDeleting ? 'Deleting...' : 'Yes, Delete'}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setShowDeleteDialog(true)}
+                      disabled={isDeleting || deleteBlocked}
+                      title={deleteBlocked ? deleteDisabledReason : undefined}
+                    >
+                      {isDeleting ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
+                      {isDeleting ? 'Deleting...' : 'Delete'}
+                    </Button>
+                    <DeleteConfirmDialog
+                      open={showDeleteDialog}
+                      onOpenChange={setShowDeleteDialog}
+                      title="Delete Brand"
+                      description={`This action cannot be undone. This will permanently delete the brand "${brand.name}" from our servers.`}
+                      onConfirm={async () => {
+                        await onDelete(brand.id || brand.brand_id);
+                      }}
+                    />
+                  </>
                 )}
                 <Button size="sm" variant="outline" onClick={handleExportPerfumes}>
                   <Download className="w-3.5 h-3.5 mr-1" /> Export CSV
@@ -629,10 +613,9 @@ export default function BrandsPage() {
     });
   }, [editBrand]);
 
-  const handleDeleteBrand = useCallback((id: string) => {
-    removeBrand.mutate(id, {
-      onSuccess: () => toast.success('Brand archived')
-    });
+  const handleDeleteBrand = useCallback(async (id: string) => {
+    await removeBrand.mutateAsync(id);
+    toast.success('Brand archived');
   }, [removeBrand]);
 
   // CSV Export for all brands
@@ -673,8 +656,8 @@ export default function BrandsPage() {
           onBack={() => setSelectedBrand(null)} 
           onEdit={handleEditBrand}
           isDeleting={removeBrand.isPending}
-          onDelete={(id) => {
-            handleDeleteBrand(id);
+          onDelete={async (id) => {
+            await handleDeleteBrand(id);
             setSelectedBrand(null);
           }}
         />

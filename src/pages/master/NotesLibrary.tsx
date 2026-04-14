@@ -13,13 +13,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/shared';
+import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog';
 import { cn } from '@/lib/utils';
 import {
   Plus, Search, X, Edit2, Trash2, Droplets, Download, FileSpreadsheet, Upload, Check, AlertTriangle, Loader2,
@@ -217,7 +214,7 @@ export default function NotesLibrary() {
   };
 
   // ---- Delete Note ----
-  const handleDelete = async (note: Note) => {
+  const handleDelete = (note: Note) => {
     setDeleteTarget(note);
   };
 
@@ -231,6 +228,7 @@ export default function NotesLibrary() {
       setDeleteTarget(null);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to delete note');
+      throw e;
     } finally {
       setDeleting(null);
     }
@@ -520,6 +518,14 @@ export default function NotesLibrary() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Delete Note"
+        description={deleteTarget ? `Are you sure you want to delete "${deleteTarget.name}"? This action cannot be undone.` : ''}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }
