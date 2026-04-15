@@ -96,6 +96,7 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
   const [perfumeSearch, setPerfumeSearch] = useState('');
   const [searchResults, setSearchResults] = useState<PerfumeSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isLoadingPerfume, setIsLoadingPerfume] = useState(!!syringe?.assigned_master_id);
   const [selectedPerfume, setSelectedPerfume] = useState<PerfumeSearchResult | null>(null);
 
   const formatPerfumeLabel = (perfume: PerfumeSearchResult) => {
@@ -106,11 +107,13 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
   useEffect(() => {
     if (!syringe?.assigned_master_id) {
       setSelectedPerfume(null);
+      setIsLoadingPerfume(false);
       return;
     }
 
     let cancelled = false;
     const masterId = syringe.assigned_master_id;
+    setIsLoadingPerfume(true);
 
     const loadAssignedPerfume = async () => {
       try {
@@ -136,6 +139,8 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
             name: syringe.dedicated_perfume_name || masterId,
           });
         }
+      } finally {
+        if (!cancelled) setIsLoadingPerfume(false);
       }
     };
 
@@ -171,13 +176,11 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
     };
   }, [perfumeSearch]);
 
-  // Only show perfumes that are NOT already assigned to another syringe
+  // Always show all perfumes matching the search so users know the search works,
+  // but they will be grayed out if already assigned to a different syringe.
   const availablePerfumes = useMemo(() => {
-    return searchResults.filter(p => {
-      if (syringe?.assigned_master_id === p.master_id) return true;
-      return !existingAssignments.has(p.master_id);
-    });
-  }, [searchResults, existingAssignments, syringe?.assigned_master_id]);
+    return searchResults;
+  }, [searchResults]);
 
   const filteredPerfumes = availablePerfumes.slice(0, 8);
 
@@ -250,7 +253,12 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
             <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold block mb-1.5">
               Assigned Perfume <span className="text-destructive">*</span>
             </label>
-            {selectedPerfume ? (
+            {isLoadingPerfume ? (
+              <div className="flex items-center justify-center p-4 bg-muted/30 rounded-lg border border-border">
+                <Loader2 className="w-4 h-4 mr-2 animate-spin text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Loading assigned perfume...</span>
+              </div>
+            ) : selectedPerfume ? (
               <div className="flex items-center gap-3 bg-gold/5 border border-gold/20 rounded-lg p-3">
                 <div className="w-8 h-8 rounded-lg bg-gold/10 flex items-center justify-center">
                   <Lock className="w-4 h-4 text-gold" />
@@ -347,8 +355,8 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
           </div>
         </div>
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-border sticky bottom-0 bg-card">
-          <Button variant="outline" onClick={onClose} disabled={isPending}>Cancel</Button>
-          <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={handleSubmit} disabled={isPending}>
+          <Button variant="outline" onClick={onClose} disabled={isPending || isLoadingPerfume}>Cancel</Button>
+          <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={handleSubmit} disabled={isPending || isLoadingPerfume || !selectedPerfume}>
             {isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
             {isPending ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save Changes' : 'Create Syringe')}
           </Button>
@@ -407,9 +415,18 @@ export default function SyringesRegistryPage() {
 
   const handleSaveSyringe = async (s: Syringe) => {
     try {
+      if (s.id) {
+        await updateSyringe.mutateAsync({ id: s.id, data: s });
+      } else {
+        await createSyringe.mutateAsync(s);
+      }
       setEditingSyringe(undefined);
-    } catch (err) {
-      // Error is caught by global handlers
+      setShowForm(false);
+    } catch (err: any) {
+      if (err?.response?.status === 409) {
+        toast.error('A syringe with this sequence or duplicate properties already exists.');
+      }
+      // Error is caught by global handlers otherwise
     }
   };
 

@@ -224,8 +224,8 @@ function AddZoneDialog({ onAdd, onClose, existingZones, isCreating }: {
         const slotStr = String(sl).padStart(2, '0');
         const code = generateLocationCode(vault, zoneId, String(s), slotStr);
         newLocs.push({
-          locationId: `loc_new_${Date.now()}_${s}_${sl}`,
-          locationCode: code,
+          location_id: `loc_new_${Date.now()}_${s}_${sl}`,
+          location_code: code,
           vault,
           zone: zoneId,
           shelf: String(s),
@@ -1468,8 +1468,8 @@ export default function VaultLocationsPage() {
               : `loc_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
             
             return {
-              locationId: uniqueId,
-              locationCode,
+              location_id: uniqueId,
+              location_code: locationCode,
               vault,
               zone,
               shelf,
@@ -1478,8 +1478,8 @@ export default function VaultLocationsPage() {
               code: locationCode,
               type: raw.type || 'sealed',
               occupied: (raw.occupied || 'No').toLowerCase() === 'yes',
-              masterId: raw.master_id || null,
-              perfumeName: raw.perfume_name || null
+              master_id: raw.master_id || null,
+              perfume_name: raw.perfume_name || null
             };
           }}
         />
