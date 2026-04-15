@@ -411,7 +411,15 @@ export default function SyringesRegistryPage() {
   const retiredCount = syringes.filter(s => s.status === 'retired').length;
   const assignedCount = syringes.filter(s => s.assigned_master_id).length;
   const totalUses = syringes.reduce((sum, s) => sum + s.use_count, 0);
-  const nextSeq = syringes.length > 0 ? Math.max(...syringes.map(s => s.sequence_number)) + 1 : 1;
+  // const nextSeq = syringes.length > 0 ? Math.max(...syringes.map(s => s.sequence_number)) + 1 : 1;
+  const nextSeq =
+    syringes.length > 0
+      ? Math.max(
+        ...syringes.map(s => parseInt(s.syringe_id.split("/")[1], 10))
+      ) + 1
+      : 1;
+
+  // const nextSequence = `s/${nextSeqValue}`;
 
   const handleSaveSyringe = async (s: Syringe) => {
     try {
@@ -735,9 +743,9 @@ export default function SyringesRegistryPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteSyringe.isPending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={(e) => { e.preventDefault(); handleConfirmDelete(); }}
-              disabled={deleteSyringe.isPending} 
+              disabled={deleteSyringe.isPending}
               className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             >
               {deleteSyringe.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
