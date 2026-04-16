@@ -721,36 +721,36 @@ function SupplierDetail({ supplier, brands, onBack, onEdit, onCreatePO, onRefres
         api.purchaseOrders.list(),
         api.supplierBrands.list(supplier.supplier_id),
       ]);
-      const supplierPOs = (posRes.data || []).filter((po: any) => po.supplierId === supplier.supplier_id || po.supplier_id === supplier.supplier_id);
+      const supplierPOs = (posRes.data || []).filter((po: any) => po.supplier_id === supplier.supplier_id || po.supplier_id === supplier.supplier_id);
       setPurchaseOrders(supplierPOs.map((po: any) => ({
-        id: po.poId || po.id,
-        po_serial: po.poId || po.poSerial || po.po_serial || `PO-${po.id}`,
-        supplier_id: po.supplierId || po.supplier_id,
+        id: po.id || po.id,
+        po_serial: po.id || po.po_serial || po.po_serial || `PO-${po.id}`,
+        supplier_id: po.supplier_id || po.supplier_id,
         status: po.status,
         currency: po.currency || 'AED',
         notes: po.notes || '',
-        quote_url: po.quoteFileUrl || po.quoteUrl || po.quote_url || null,
-        invoice_url: po.invoiceFileUrl || po.invoiceUrl || po.invoice_url || null,
-        total_amount: Number(po.totalAmount || po.total_amount || 0),
-        created_at: po.createdAt || po.created_at,
-        updated_at: po.updatedAt || po.updated_at,
+        quote_url: po.quote_url || po.quote_url || po.quote_url || null,
+        invoice_url: po.invoice_url || po.invoice_url || po.invoice_url || null,
+        total_amount: Number(po.total_amount || po.total_amount || 0),
+        created_at: po.created_at || po.created_at,
+        updated_at: po.updated_at || po.updated_at,
         items: (po.items || []).map((i: any) => ({
-          id: i.id || i.itemId,
-          perfume_id: i.masterId || i.perfumeId || i.perfume_id,
-          perfume_name: i.perfumeName || i.perfume_name || 'Unknown',
-          master_id: i.masterId || i.perfumeId || i.perfume_id || i.master_id || '',
+          id: i.id || i.id,
+          perfume_id: i.master_id || i.perfume_id || i.perfume_id,
+          perfume_name: i.perfume_name || i.perfume_name || 'Unknown',
+          master_id: i.master_id || i.perfume_id || i.perfume_id || i.master_id || '',
           qty: i.qty || 0,
-          size_ml: i.sizeMl || i.size_ml || 0,
-          bottle_type: i.bottleType || i.bottle_type || 'sealed',
-          unit_price: i.unitPrice != null ? Number(i.unitPrice) : (i.unit_price != null ? Number(i.unit_price) : null),
-          received_qty: i.receivedQty || i.received_qty || 0,
+          size_ml: i.size_ml || i.size_ml || 0,
+          bottle_type: i.bottle_type || i.bottle_type || 'sealed',
+          unit_price: i.unit_price != null ? Number(i.unit_price) : (i.unit_price != null ? Number(i.unit_price) : null),
+          received_qty: i.received_qty || i.received_qty || 0,
         })),
-        payment_status: po.paymentStatus || po.payment_status || 'unpaid',
-        payment_method: po.paymentMethod || po.payment_method || null,
-        payment_date: po.paymentDate || po.payment_date || null,
-        amount_paid: Number(po.amountPaid || po.amount_paid || 0),
-        payment_ref: po.paymentRef || po.payment_ref || null,
-        payment_notes: po.paymentNotes || po.payment_notes || null,
+        payment_status: po.payment_status || po.payment_status || 'unpaid',
+        payment_method: po.payment_method || po.payment_method || null,
+        payment_date: po.payment_date || po.payment_date || null,
+        amount_paid: Number(po.amount_paid || po.amount_paid || 0),
+        payment_ref: po.payment_ref || po.payment_ref || null,
+        payment_notes: po.payment_notes || po.payment_notes || null,
       })));
       setSupplierBrandIds((brandsRes.data || []).map((b: any) => b.brandId || b.brand_id));
     } catch (e) {
@@ -1084,8 +1084,8 @@ function SupplierDetail({ supplier, brands, onBack, onEdit, onCreatePO, onRefres
 
 // ---- Main Suppliers Page ----
 export default function SuppliersPage() {
-  const { data: suppliersData, isLoading: suppliersLoading, refetch: refetchSuppliers } = useApiQuery(api.master.suppliers);
-  const { data: brandsData } = useApiQuery(api.master.brands);
+  const { data: suppliersData, isLoading: suppliersLoading, refetch: refetchSuppliers } = useApiQuery(api.suppliers.list);
+  const { data: brandsData } = useApiQuery(api.brands.list);
   const { data: perfumesData } = useApiQuery(api.master.perfumes);
   const { data: posData, refetch: refetchPOs } = useApiQuery(api.purchaseOrders.list);
 
@@ -1282,17 +1282,14 @@ export default function SuppliersPage() {
             {filtered.map((s: Supplier) => {
               const typeMeta = TYPE_LABELS[s.type as SupplierType] || TYPE_LABELS.wholesaler;
               const flag = COUNTRY_FLAGS[s.country] || '';
-              const supplierActivePOs = allPOs.filter((po: any) => {
-                const sid = po.supplierId || po.supplier_id;
-                return sid === s.supplier_id && po.status !== 'confirmed' && po.status !== 'cancelled';
-              });
+              const activeCount = s.active_po_count || 0;
               return (
                 <div key={s.supplier_id}
                   onClick={() => setSelectedSupplier(s)}
                   className="bg-card border border-border rounded-xl p-5 hover:shadow-lg hover:border-gold/30 transition-all cursor-pointer group relative">
-                  {supplierActivePOs.length > 0 && (
+                  {activeCount > 0 && (
                     <div className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center shadow-sm">
-                      {supplierActivePOs.length}
+                      {activeCount}
                     </div>
                   )}
                   <div className="flex items-start justify-between mb-3">
@@ -1322,8 +1319,8 @@ export default function SuppliersPage() {
                   <div className="mt-4 pt-3 border-t border-border/50 flex items-center justify-between">
                     <StatusBadge variant={s.active ? 'success' : 'muted'}>{s.active ? 'Active' : 'Inactive'}</StatusBadge>
                     {s.payment_terms && <span className="text-[10px] text-muted-foreground">{s.payment_terms}</span>}
-                    {supplierActivePOs.length > 0 && (
-                      <StatusBadge variant="warning"><Clock className="w-3 h-3 mr-1" />{supplierActivePOs.length} PO</StatusBadge>
+                    {activeCount > 0 && (
+                      <StatusBadge variant="warning"><Clock className="w-3 h-3 mr-1" />{activeCount} PO</StatusBadge>
                     )}
                   </div>
                 </div>
@@ -1348,10 +1345,7 @@ export default function SuppliersPage() {
                 {filtered.map((s: Supplier) => {
                   const typeMeta = TYPE_LABELS[s.type as SupplierType] || TYPE_LABELS.wholesaler;
                   const flag = COUNTRY_FLAGS[s.country] || '';
-                  const activePOCount = allPOs.filter((po: any) => {
-                    const sid = po.supplierId || po.supplier_id;
-                    return sid === s.supplier_id && po.status !== 'confirmed' && po.status !== 'cancelled';
-                  }).length;
+                  const activePOCount = s.active_po_count || 0;
                   return (
                     <tr key={s.supplier_id} onClick={() => setSelectedSupplier(s)}
                       className="border-b border-border/50 hover:bg-muted/30 cursor-pointer transition-colors">

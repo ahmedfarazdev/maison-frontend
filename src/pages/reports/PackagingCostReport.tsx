@@ -71,13 +71,13 @@ function normalizeCat(raw: string): string {
   return CATEGORY_LABELS[raw] || raw || 'Others';
 }
 
-type SortField = 'supplier' | 'totalSpent' | 'orders' | 'units' | 'avgUnitCost';
+type SortField = 'supplier' | 'total_spent' | 'orders' | 'units' | 'avg_unit_cost';
 type SortDir = 'asc' | 'desc';
 
 // ---- Component ----
 export default function PackagingCostReport() {
   const [timeRange, setTimeRange] = useState<'all' | '6m' | '3m' | '1m'>('all');
-  const [sortField, setSortField] = useState<SortField>('totalSpent');
+  const [sortField, setSortField] = useState<SortField>('total_spent');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   // Fetch data
@@ -210,13 +210,13 @@ export default function PackagingCostReport() {
 
   // ---- Supplier Breakdown ----
   const supplierBreakdown = useMemo(() => {
-    const map: Record<string, { supplier: string; totalSpent: number; orders: number; units: number; totalUnitCost: number; itemCount: number }> = {};
+    const map: Record<string, { supplier: string; total_spent: number; orders: number; units: number; totalUnitCost: number; itemCount: number }> = {};
 
     confirmedPOs.forEach((po: any) => {
       const name = po.supplierName || 'Unknown';
-      if (!map[name]) map[name] = { supplier: name, totalSpent: 0, orders: 0, units: 0, totalUnitCost: 0, itemCount: 0 };
+      if (!map[name]) map[name] = { supplier: name, total_spent: 0, orders: 0, units: 0, totalUnitCost: 0, itemCount: 0 };
       map[name].orders += 1;
-      map[name].totalSpent += Number(po.totalAmount || 0);
+      map[name].total_spent += Number(po.totalAmount || 0);
 
       const items = po.items || [];
       items.forEach((item: any) => {
@@ -230,7 +230,7 @@ export default function PackagingCostReport() {
 
     return Object.values(map).map(v => ({
       ...v,
-      avgUnitCost: v.itemCount > 0 ? v.totalUnitCost / v.itemCount : 0,
+      avg_unit_cost: v.itemCount > 0 ? v.totalUnitCost / v.itemCount : 0,
     }));
   }, [confirmedPOs]);
 
@@ -537,10 +537,10 @@ export default function PackagingCostReport() {
                 <tr className="bg-muted/10 border-b border-border">
                   {[
                     { field: 'supplier' as SortField, label: 'Supplier', align: 'left' },
-                    { field: 'totalSpent' as SortField, label: 'Total Spent', align: 'right' },
+                    { field: 'total_spent' as SortField, label: 'Total Spent', align: 'right' },
                     { field: 'orders' as SortField, label: 'Orders', align: 'center' },
                     { field: 'units' as SortField, label: 'Units', align: 'center' },
-                    { field: 'avgUnitCost' as SortField, label: 'Avg Unit Cost', align: 'right' },
+                    { field: 'avg_unit_cost' as SortField, label: 'Avg Unit Cost', align: 'right' },
                   ].map(col => (
                     <th key={col.field}
                       onClick={() => toggleSort(col.field)}
@@ -558,18 +558,18 @@ export default function PackagingCostReport() {
               </thead>
               <tbody>
                 {sortedSuppliers.length > 0 ? sortedSuppliers.map((s) => {
-                  const share = totalSpend > 0 ? (s.totalSpent / totalSpend * 100) : 0;
+                  const share = totalSpend > 0 ? (s.total_spent / totalSpend * 100) : 0;
                   return (
                     <tr key={s.supplier} className="border-b border-border/50 hover:bg-muted/10 transition-colors">
                       <td className="px-5 py-3">
                         <p className="text-sm font-medium">{s.supplier}</p>
                       </td>
                       <td className="px-5 py-3 text-right">
-                        <span className="text-sm font-mono font-bold text-gold">{fmtAED(s.totalSpent)}</span>
+                        <span className="text-sm font-mono font-bold text-gold">{fmtAED(s.total_spent)}</span>
                       </td>
                       <td className="px-5 py-3 text-center text-sm font-mono">{s.orders}</td>
                       <td className="px-5 py-3 text-center text-sm font-mono">{s.units.toLocaleString()}</td>
-                      <td className="px-5 py-3 text-right text-sm font-mono">{fmtAED(s.avgUnitCost)}</td>
+                      <td className="px-5 py-3 text-right text-sm font-mono">{fmtAED(s.avg_unit_cost)}</td>
                       <td className="px-5 py-3 text-center">
                         <div className="flex items-center gap-2 justify-center">
                           <div className="w-16 bg-muted/50 rounded-full h-1.5">

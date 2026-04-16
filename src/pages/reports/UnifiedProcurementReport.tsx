@@ -27,18 +27,18 @@ const PACKAGING_COLOR = '#3b82f6'; // blue
 const INVENTORY_COLOR = '#10b981'; // emerald
 
 type TimeRange = 'all' | '6m' | '3m' | '1m';
-type SupplierSortField = 'supplier' | 'type' | 'totalSpent' | 'orders' | 'avgOrder';
+type SupplierSortField = 'supplier' | 'type' | 'total_spent' | 'orders' | 'avg_order';
 
 interface SupplierRow {
   supplier: string;
   type: 'perfume' | 'packaging' | 'both';
   perfumeSpend: number;
   packagingSpend: number;
-  totalSpent: number;
+  total_spent: number;
   perfumeOrders: number;
   packagingOrders: number;
   orders: number;
-  avgOrder: number;
+  avg_order: number;
 }
 type SortDir = 'asc' | 'desc';
 
@@ -61,7 +61,7 @@ function pctStr(n: number, total: number): string {
 // ---- Component ----
 export default function UnifiedProcurementReport() {
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
-  const [supplierSort, setSupplierSort] = useState<SupplierSortField>('totalSpent');
+  const [supplierSort, setSupplierSort] = useState<SupplierSortField>('total_spent');
   const [supplierDir, setSupplierDir] = useState<SortDir>('desc');
 
   // ---- Fetch all data sources ----
@@ -270,24 +270,24 @@ export default function UnifiedProcurementReport() {
   const supplierData = useMemo(() => {
     const map: Record<string, {
       supplier: string; type: 'perfume' | 'packaging' | 'both';
-      perfumeSpend: number; packagingSpend: number; totalSpent: number;
+      perfumeSpend: number; packagingSpend: number; total_spent: number;
       perfumeOrders: number; packagingOrders: number; orders: number;
     }> = {};
 
     confirmedPerfumePOs.forEach((po: any) => {
       const name = po.supplierName || 'Unknown';
-      if (!map[name]) map[name] = { supplier: name, type: 'perfume', perfumeSpend: 0, packagingSpend: 0, totalSpent: 0, perfumeOrders: 0, packagingOrders: 0, orders: 0 };
+      if (!map[name]) map[name] = { supplier: name, type: 'perfume', perfumeSpend: 0, packagingSpend: 0, total_spent: 0, perfumeOrders: 0, packagingOrders: 0, orders: 0 };
       map[name].perfumeSpend += Number(po.totalAmount || 0);
-      map[name].totalSpent += Number(po.totalAmount || 0);
+      map[name].total_spent += Number(po.totalAmount || 0);
       map[name].perfumeOrders += 1;
       map[name].orders += 1;
     });
 
     confirmedPkgPOs.forEach((po: any) => {
       const name = po.supplierName || 'Unknown';
-      if (!map[name]) map[name] = { supplier: name, type: 'packaging', perfumeSpend: 0, packagingSpend: 0, totalSpent: 0, perfumeOrders: 0, packagingOrders: 0, orders: 0 };
+      if (!map[name]) map[name] = { supplier: name, type: 'packaging', perfumeSpend: 0, packagingSpend: 0, total_spent: 0, perfumeOrders: 0, packagingOrders: 0, orders: 0 };
       map[name].packagingSpend += Number(po.totalAmount || 0);
-      map[name].totalSpent += Number(po.totalAmount || 0);
+      map[name].total_spent += Number(po.totalAmount || 0);
       map[name].packagingOrders += 1;
       map[name].orders += 1;
     });
@@ -301,7 +301,7 @@ export default function UnifiedProcurementReport() {
 
     return Object.values(map).map(s => ({
       ...s,
-      avgOrder: s.orders > 0 ? s.totalSpent / s.orders : 0,
+      avg_order: s.orders > 0 ? s.total_spent / s.orders : 0,
     })) as SupplierRow[];
   }, [confirmedPerfumePOs, confirmedPkgPOs]);
 
@@ -344,8 +344,8 @@ export default function UnifiedProcurementReport() {
     lines.push('');
     lines.push('Supplier,Type,Perfume Spend,Packaging Spend,Total Spend,Perfume Orders,Packaging Orders,Total Orders,Avg Order');
     sortedSuppliers.forEach(s => {
-      const avg = s.orders > 0 ? (s.totalSpent / s.orders).toFixed(2) : '0';
-      lines.push(`"${s.supplier}",${s.type},${s.perfumeSpend.toFixed(2)},${s.packagingSpend.toFixed(2)},${s.totalSpent.toFixed(2)},${s.perfumeOrders},${s.packagingOrders},${s.orders},${avg}`);
+      const avg = s.orders > 0 ? (s.total_spent / s.orders).toFixed(2) : '0';
+      lines.push(`"${s.supplier}",${s.type},${s.perfumeSpend.toFixed(2)},${s.packagingSpend.toFixed(2)},${s.total_spent.toFixed(2)},${s.perfumeOrders},${s.packagingOrders},${s.orders},${avg}`);
     });
     lines.push('');
     lines.push('Month,Perfume Spend,Packaging Spend,Total');
@@ -696,9 +696,9 @@ export default function UnifiedProcurementReport() {
                     {[
                       { field: 'supplier' as const, label: 'SUPPLIER' },
                       { field: 'type' as const, label: 'TYPE' },
-                      { field: 'totalSpent' as const, label: 'TOTAL SPEND' },
+                      { field: 'total_spent' as const, label: 'TOTAL SPEND' },
                       { field: 'orders' as const, label: 'ORDERS' },
-                      { field: 'avgOrder' as const, label: 'AVG ORDER' },
+                      { field: 'avg_order' as const, label: 'AVG ORDER' },
                     ].map(col => (
                       <th key={col.field} className="px-4 py-3 text-left text-[10px] uppercase tracking-wider text-muted-foreground font-semibold cursor-pointer hover:text-foreground"
                         onClick={() => toggleSort(col.field)}>
@@ -713,8 +713,8 @@ export default function UnifiedProcurementReport() {
                 </thead>
                 <tbody>
                   {sortedSuppliers.map((s, i) => {
-                    const avgOrder = s.orders > 0 ? s.totalSpent / s.orders : 0;
-                    const share = totalSpend > 0 ? (s.totalSpent / totalSpend) * 100 : 0;
+                    const avg_order = s.orders > 0 ? s.total_spent / s.orders : 0;
+                    const share = totalSpend > 0 ? (s.total_spent / totalSpend) * 100 : 0;
                     return (
                       <tr key={i} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                         <td className="px-4 py-3">
@@ -730,25 +730,25 @@ export default function UnifiedProcurementReport() {
                             {s.type}
                           </span>
                         </td>
-                        <td className="px-4 py-3 font-mono font-bold">{fmtAED(s.totalSpent)}</td>
+                        <td className="px-4 py-3 font-mono font-bold">{fmtAED(s.total_spent)}</td>
                         <td className="px-4 py-3">
                           <span className="font-mono">{s.orders}</span>
                           <span className="text-[10px] text-muted-foreground ml-1">
                             ({s.perfumeOrders}P / {s.packagingOrders}K)
                           </span>
                         </td>
-                        <td className="px-4 py-3 font-mono">{fmtAED(avgOrder)}</td>
+                        <td className="px-4 py-3 font-mono">{fmtAED(avg_order)}</td>
                         <td className="px-4 py-3">
                           <div className="flex gap-1 items-center">
                             {s.perfumeSpend > 0 && (
                               <div className="h-2 rounded-full" style={{
-                                width: `${Math.max(4, (s.perfumeSpend / s.totalSpent) * 80)}px`,
+                                width: `${Math.max(4, (s.perfumeSpend / s.total_spent) * 80)}px`,
                                 backgroundColor: PERFUME_COLOR,
                               }} />
                             )}
                             {s.packagingSpend > 0 && (
                               <div className="h-2 rounded-full" style={{
-                                width: `${Math.max(4, (s.packagingSpend / s.totalSpent) * 80)}px`,
+                                width: `${Math.max(4, (s.packagingSpend / s.total_spent) * 80)}px`,
                                 backgroundColor: PACKAGING_COLOR,
                               }} />
                             )}

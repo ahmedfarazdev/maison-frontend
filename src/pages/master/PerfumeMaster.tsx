@@ -407,7 +407,7 @@ export default function PerfumeMaster() {
         id: createdPerfumeId || perfume.id,
       };
 
-      // 2. Determine robust Syringe ID (max sequence + 1 to avoid collisions)
+      // 2. Determine robust Syringe ID or reuse orphan
       const refetchResult = await syringesQuery.refetch();
       const currentSyringes = refetchResult.data ?? syringesQuery.data ?? [];
       const syringeListError = refetchResult.error instanceof Error
@@ -424,30 +424,51 @@ export default function PerfumeMaster() {
         };
       }
 
-      const maxSeq = currentSyringes.reduce((max, s) => Math.max(max, getSyringeSequence(s)), 0);
-      const nextSeq = maxSeq + 1;
-      const syringeId = `S/${nextSeq}`;
+      // Try to find the first unassigned (orphan) syringe sorted alphabetically
+      const unassignedSyringe = [...currentSyringes]
+        .sort((a, b) => getSyringeSequence(a) - getSyringeSequence(b))
+        .find(s => !s.assigned_master_id && !s.dedicated_perfume_id);
 
-      // 3. Attempt to create syringe for this perfume
       let syringeCreated = false;
       let syringeError: string | null = null;
+      let syringeId = '';
+
       try {
-        await api.mutations.syringes.create({
-          syringeId,
-          assignedMasterId: createdPerfume.master_id,
-          dedicatedPerfumeName: `${createdPerfume.brand} ${createdPerfume.name}`,
-          dedicatedPerfumeId: createdPerfume.master_id,
-          sequenceNumber: nextSeq,
-          size: '5ml',
-          status: 'active',
-          useCount: 0,
-          active: true,
-          notes: 'Auto-created with perfume',
-        });
-        syringeCreated = true;
+        if (unassignedSyringe) {
+          // Reuse unassigned syringe
+          syringeId = unassignedSyringe.syringe_id;
+          await api.mutations.syringes.update(unassignedSyringe.id, {
+            assigned_master_id: createdPerfume.master_id,
+            dedicated_perfume_name: `${createdPerfume.brand} ${createdPerfume.name}`,
+            dedicated_perfume_id: createdPerfume.master_id,
+            status: 'active',
+            active: true,
+            notes: 'Auto-reassigned to new perfume',
+          } as any);
+          syringeCreated = true;
+        } else {
+          // Fallback: create new syringe
+          const maxSeq = currentSyringes.reduce((max, s) => Math.max(max, getSyringeSequence(s)), 0);
+          const nextSeq = maxSeq + 1;
+          syringeId = `S/${nextSeq}`;
+          
+          await api.mutations.syringes.create({
+            syringe_id: syringeId,
+            assigned_master_id: createdPerfume.master_id,
+            dedicated_perfume_name: `${createdPerfume.brand} ${createdPerfume.name}`,
+            dedicated_perfume_id: createdPerfume.master_id,
+            sequence_number: nextSeq,
+            size: '5ml',
+            status: 'active',
+            use_count: 0,
+            active: true,
+            notes: 'Auto-created with perfume',
+          } as any);
+          syringeCreated = true;
+        }
       } catch (err) {
-        syringeError = err instanceof Error ? err.message : 'Unknown error while creating syringe';
-        console.error('Syringe auto-creation failed:', err);
+        syringeError = err instanceof Error ? err.message : 'Unknown error while processing syringe';
+        console.error('Syringe auto-assignment failed:', err);
       }
 
       return { perfume: createdPerfume, syringeId, syringeCreated, syringeError, imageOptions };

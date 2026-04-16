@@ -1891,7 +1891,6 @@ export function SuppliersPage() {
 export function SyringesRegistry() {
   const { data: syrRes } = useApiQuery(() => api.master.syringes(), []);
   const syringes = (syrRes || []) as Syringe[];
-  
 
   return (
     <div>

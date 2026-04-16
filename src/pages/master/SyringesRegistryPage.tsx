@@ -189,24 +189,23 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
   };
 
   const handleSubmit = () => {
-    if (!selectedPerfume) {
-      toast.error('A syringe must be assigned to a perfume. One syringe = one perfume.');
-      return;
-    }
     const parsedCustomMl = form.size === 'custom' ? parseFloat(customMl) : undefined;
     if (form.size === 'custom' && (!parsedCustomMl || parsedCustomMl <= 0)) {
       toast.error('Please enter a valid custom size in ml');
       return;
     }
-    const dedicatedName = selectedPerfume.brand && selectedPerfume.name
-      ? `${selectedPerfume.brand} ${selectedPerfume.name}`
-      : selectedPerfume.name || selectedPerfume.master_id;
+    const dedicatedName = selectedPerfume 
+      ? (selectedPerfume.brand && selectedPerfume.name
+        ? `${selectedPerfume.brand} ${selectedPerfume.name}`
+        : selectedPerfume.name || selectedPerfume.master_id)
+      : null;
+
     const saved: Syringe = {
       id: syringe?.id || '',
       syringe_id: syringe?.syringe_id || `S/${nextSeq}`,
-      assigned_master_id: selectedPerfume.master_id,
+      assigned_master_id: selectedPerfume ? selectedPerfume.master_id : null,
       dedicated_perfume_name: dedicatedName,
-      dedicated_perfume_id: selectedPerfume.master_id,
+      dedicated_perfume_id: selectedPerfume ? selectedPerfume.master_id : null,
       sequence_number: syringe?.sequence_number || nextSeq,
       size: (form.size as SyringeSize) || '5ml',
       custom_size_ml: parsedCustomMl,
@@ -241,17 +240,17 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
           <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-start gap-2">
             <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">Strict Assignment</p>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">Strict Assignment OR Detach</p>
               <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">
-                Each syringe is dedicated to one perfume only. It cannot be used with any other perfume.
+                Each syringe is dedicated to one perfume only. You can detach it and assign a new perfume later.
               </p>
             </div>
           </div>
 
-          {/* Assign Perfume — REQUIRED */}
+          {/* Assign Perfume — OPTIONAL */}
           <div>
             <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold block mb-1.5">
-              Assigned Perfume <span className="text-destructive">*</span>
+              Assigned Perfume
             </label>
             {isLoadingPerfume ? (
               <div className="flex items-center justify-center p-4 bg-muted/30 rounded-lg border border-border">
@@ -356,7 +355,7 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
         </div>
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-border sticky bottom-0 bg-card">
           <Button variant="outline" onClick={onClose} disabled={isPending || isLoadingPerfume}>Cancel</Button>
-          <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={handleSubmit} disabled={isPending || isLoadingPerfume || !selectedPerfume}>
+          <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5" onClick={handleSubmit} disabled={isPending || isLoadingPerfume}>
             {isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
             {isPending ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save Changes' : 'Create Syringe')}
           </Button>

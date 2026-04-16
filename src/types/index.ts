@@ -301,6 +301,7 @@ export interface Supplier {
   supplier_id: string;
   type: SupplierType;
   supplier_type: SupplierProcType;
+  active_po_count: number;
   name: string;
   contact_name?: string;
   contact_email: string;

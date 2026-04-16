@@ -1017,7 +1017,7 @@ export const api = {
   inventory: {
     sealedBottles: async () => {
       try {
-        const rows = await apiGet<any[]>('/inventory/sealed-bottles');
+        const rows = await apiGet<any[]>('/inventory/bottles/sealed');
         return wrapList(rows.map(mapInventoryBottle));
       } catch {
         return wrapList(mock.mockSealedBottles);
@@ -1025,12 +1025,43 @@ export const api = {
     },
     decantBottles: async () => {
       try {
-        const rows = await apiGet<any[]>('/inventory/decant-bottles');
+        const rows = await apiGet<any[]>('/inventory/bottles/decant');
         return wrapList(rows.map(mapDecantBottle));
       } catch {
         return wrapList(mock.mockDecantBottles);
       }
     },
+    allBottles: async () => {
+      try {
+        const rows = await apiGet<any[]>('/inventory/bottles');
+        return wrapList(rows.map(mapInventoryBottle));
+      } catch {
+        return wrapList([]);
+      }
+    },
+    packagingStock: async () => {
+      try {
+        const rows = await apiGet<any[]>('/inventory/packaging');
+        return wrapList(rows);
+      } catch {
+        return wrapList([]);
+      }
+    },
+    rtsProducts: async () => {
+      try {
+        const rows = await apiGet<any[]>('/inventory/rts');
+        return wrapList(rows);
+      } catch {
+        return wrapList([]);
+      }
+    },
+    // Batch intake endpoints — single request for all entries
+    batchIntakeBottles: async (entries: any[]) =>
+      apiPost<any>('/inventory/bottles/intake', { entries }),
+    batchIntakePackaging: async (entries: any[]) =>
+      apiPost<any>('/inventory/packaging/intake', { entries }),
+    batchIntakeRts: async (entries: any[]) =>
+      apiPost<any>('/inventory/rts/intake', { entries }),
     reconciliation: {
       list: async () => wrapList([]),
       create: async (d: any) => wrapOne(d),
@@ -1194,7 +1225,7 @@ export const api = {
   ledger: {
     bottle: async () => {
       try {
-        const rows = await apiGet<any[]>('/ledger/bottle-events');
+        const rows = await apiGet<any[]>('/inventory/bottles/ledger');
         return wrapList(rows.map(mapBottleLedgerEvent));
       } catch {
         return wrapList(mock.mockBottleLedger);
@@ -1202,10 +1233,18 @@ export const api = {
     },
     decant: async () => {
       try {
-        const rows = await apiGet<any[]>('/ledger/decant-events');
+        const rows = await apiGet<any[]>('/inventory/bottles/ledger');
         return wrapList(rows.map(mapDecantLedgerEvent));
       } catch {
         return wrapList(mock.mockDecantLedger);
+      }
+    },
+    packaging: async () => {
+      try {
+        const rows = await apiGet<any[]>('/inventory/packaging/ledger');
+        return wrapList(rows);
+      } catch {
+        return wrapList([]);
       }
     },
   },

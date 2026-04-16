@@ -56,14 +56,6 @@ interface PackagingEntry {
 
 export default function Station0() {
   const [activeTab, setActiveTab] = useState('bottles');
-  const { data: perfumesRes } = useApiQuery(() => api.master.perfumes(), []);
-  const { data: skusRes } = useApiQuery(() => api.master.packagingSKUs(), []);
-  const { data: suppliersRes } = useApiQuery(() => api.master.suppliers(), []);
-  const { data: locationsRes } = useApiQuery(() => api.master.locations(), []);
-  const perfumes = (perfumesRes || []) as Perfume[];
-  const skus = (skusRes || []) as PackagingSKU[];
-  const suppliers = (suppliersRes || []) as Supplier[];
-  const locations = ((locationsRes as any) || []) as VaultLocation[];
 
   return (
     <div>
@@ -86,20 +78,16 @@ export default function Station0() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="bottles">
-            <BottleIntakeForm
-              perfumes={perfumes}
-              suppliers={suppliers}
-              locations={locations}
-            />
+          <TabsContent value="bottles" className="mt-0">
+            {activeTab === 'bottles' && <BottleIntakeForm />}
           </TabsContent>
 
-          <TabsContent value="packaging">
-            <PackagingIntakeForm skus={skus} suppliers={suppliers} />
+          <TabsContent value="packaging" className="mt-0">
+            {activeTab === 'packaging' && <PackagingIntakeForm />}
           </TabsContent>
 
-          <TabsContent value="rts">
-            <RTSProductIntakeForm />
+          <TabsContent value="rts" className="mt-0">
+            {activeTab === 'rts' && <RTSProductIntakeForm />}
           </TabsContent>
         </Tabs>
       </div>
@@ -108,17 +96,68 @@ export default function Station0() {
 }
 
 // ============================================================
+// SHARED COMPONENTS
+// ============================================================
+
+function SubmissionOverlay({ 
+  status, 
+  title, 
+  subtitle, 
+  onClose 
+}: { 
+  status: 'submitting' | 'success' | 'error', 
+  title: string, 
+  subtitle?: string,
+  onClose?: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-sm animate-in fade-in duration-300">
+      <div className="bg-card border border-border shadow-2xl rounded-2xl p-8 max-w-sm w-full text-center space-y-6 animate-in zoom-in-95 duration-300">
+        <div className="flex justify-center">
+          {status === 'submitting' && (
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full border-4 border-gold/20 border-t-gold animate-spin" />
+              <Loader2 className="w-6 h-6 text-gold absolute inset-0 m-auto animate-pulse" />
+            </div>
+          )}
+          {status === 'success' && (
+            <div className="w-16 h-16 rounded-full bg-success/10 flex items-center justify-center">
+              <CheckCircle2 className="w-8 h-8 text-success" />
+            </div>
+          )}
+          {status === 'error' && (
+            <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center">
+              <X className="w-8 h-8 text-destructive" />
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <h3 className="text-xl font-bold">{title}</h3>
+          {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+        </div>
+
+        {status !== 'submitting' && (
+          <Button onClick={onClose} className="w-full bg-foreground text-background hover:bg-foreground/90">
+            {status === 'success' ? 'Continue' : 'Try Again'}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // BOTTLE INTAKE FORM
 // ============================================================
-function BottleIntakeForm({
-  perfumes,
-  suppliers,
-  locations,
-}: {
-  perfumes: Perfume[];
-  suppliers: Supplier[];
-  locations: VaultLocation[];
-}) {
+function BottleIntakeForm() {
+  const { data: perfumesRes } = useApiQuery(() => api.master.perfumes(), []);
+  const { data: suppliersRes } = useApiQuery(() => api.master.suppliers(), []);
+  const { data: locationsRes } = useApiQuery(() => api.master.locations(), []);
+
+  const perfumes = (perfumesRes || []) as Perfume[];
+  const suppliers = (suppliersRes || []) as Supplier[];
+  const locations = ((locationsRes as any) || []) as VaultLocation[];
   const [entries, setEntries] = useState<BottleEntry[]>([]);
   const [search, setSearch] = useState('');
   const [selectedPerfume, setSelectedPerfume] = useState<Perfume | null>(null);
@@ -139,6 +178,10 @@ function BottleIntakeForm({
 
   const [showPerfumeDropdown, setShowPerfumeDropdown] = useState(false);
   const [showCsvReference, setShowCsvReference] = useState(false);
+  const [submissionStatus, setSubmissionStatus] = useState<{
+    status: 'idle' | 'submitting' | 'success' | 'error';
+    summary?: { success: number; failed: number };
+  }>({ status: 'idle' });
 
   const filteredPerfumes = useMemo(() => {
     if (!search) return perfumes.slice(0, 50);
@@ -178,88 +221,42 @@ function BottleIntakeForm({
 
   const finishIntake = async () => {
     if (entries.length === 0) return;
-    setSubmitting(true);
-    let successCount = 0;
-    let failCount = 0;
+    setSubmissionStatus({ status: 'submitting' });
 
-    for (const entry of entries) {
-      try {
-        const bottleId = `BTL-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-        const now = new Date().toISOString().split('T')[0];
+    try {
+      const batchEntries = entries.map(entry => ({
+        masterId: entry.master_id,
+        perfumeName: entry.perfume_name,
+        bottleType: entry.bottle_type,
+        sizeMl: entry.size_ml,
+        supplierId: entry.supplier_id,
+        locationCode: entry.location_code,
+        purchasePrice: String(entry.purchase_price),
+        manufacturerId: entry.manufacturer_id,
+        allocation: entry.allocation === 'sealed' ? 'sealed' : 'decanting'
+      }));
 
-        if (entry.allocation === 'sealed') {
-          await api.mutations.bottles.create({
-            bottleId,
-            masterId: entry.master_id,
-            bottleType: entry.bottle_type,
-            sizeMl: entry.size_ml,
-            currentMl: String(entry.size_ml),
-            supplierId: entry.supplier_id,
-            purchasePrice: String(entry.purchase_price),
-            purchaseDate: now,
-            locationCode: entry.location_code,
-            status: 'available',
-            manufacturerId: entry.manufacturer_id,
-            notes: `Intake via Stock Register (${entry.bottle_type})`,
-          });
+      const result = await api.inventory.batchIntakeBottles(batchEntries);
 
-          await api.mutations.ledger.createBottleEvent({
-            eventId: `EVT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            bottleId,
-            type: 'intake_sealed',
-            qtyMl: String(entry.size_ml),
-            reason: `New ${entry.bottle_type} bottle intake: ${entry.perfume_name}`,
-          });
-        } else {
-          await api.mutations.bottles.create({
-            bottleId,
-            masterId: entry.master_id,
-            bottleType: 'open',
-            sizeMl: entry.size_ml,
-            currentMl: String(entry.size_ml),
-            supplierId: entry.supplier_id,
-            purchasePrice: String(entry.purchase_price),
-            purchaseDate: now,
-            locationCode: entry.location_code,
-            status: 'in_decanting',
-            manufacturerId: entry.manufacturer_id,
-            notes: `Intake via Stock Register — allocated to decanting (${entry.bottle_type})`,
-          });
-
-          const decantBottleId = `DEC-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-          await api.mutations.decantBottles.create({
-            bottleId: decantBottleId,
-            masterId: entry.master_id,
-            sizeMl: entry.size_ml,
-            currentMl: String(entry.size_ml),
-            openedAt: now,
-            locationCode: entry.location_code,
-            manufacturerId: entry.manufacturer_id,
-          });
-
-          await api.mutations.ledger.createBottleEvent({
-            eventId: `EVT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            bottleId,
-            type: 'intake_decanting',
-            qtyMl: String(entry.size_ml),
-            reason: `New bottle opened for decanting: ${entry.perfume_name}`,
-          });
-        }
-        successCount++;
-      } catch (err: any) {
-        console.error('Failed to register bottle:', err);
-        failCount++;
+      if (result.success > 0) {
+        setSubmissionStatus({ 
+          status: 'success', 
+          summary: { success: result.success, failed: result.failed } 
+        });
+        setEntries([]); 
+      } else {
+        setSubmissionStatus({ status: 'error' });
       }
+      
+      if (result.failed > 0) {
+        toast.error(`${result.failed} items failed. Check console.`);
+        console.error('Batch partial failures:', result.errors);
+      }
+    } catch (err: any) {
+      console.error('Failed to register batch:', err);
+      setSubmissionStatus({ status: 'error' });
+      toast.error(err.message || 'Batch registration failed');
     }
-
-    setSubmitting(false);
-    if (successCount > 0) {
-      toast.success(`${successCount} bottle${successCount > 1 ? 's' : ''} registered successfully`);
-    }
-    if (failCount > 0) {
-      toast.error(`${failCount} bottle${failCount > 1 ? 's' : ''} failed to register`);
-    }
-    setEntries([]);
   };
 
   const downloadCsvTemplate = useCallback(() => {
@@ -827,6 +824,22 @@ function BottleIntakeForm({
           )}
         </div>
       </div>
+      {submissionStatus.status !== 'idle' && (
+        <SubmissionOverlay
+          status={submissionStatus.status}
+          title={
+            submissionStatus.status === 'submitting' ? 'Registering Intake...' :
+            submissionStatus.status === 'success' ? 'Intake Successful' :
+            'Registration Failed'
+          }
+          subtitle={
+            submissionStatus.status === 'success' ? 
+              `${submissionStatus.summary?.success} bottles logged. ${submissionStatus.summary?.failed ? `${submissionStatus.summary.failed} failed.` : ''}` :
+              undefined
+          }
+          onClose={() => setSubmissionStatus({ status: 'idle' })}
+        />
+      )}
     </div>
   );
 }
@@ -834,7 +847,12 @@ function BottleIntakeForm({
 // ============================================================
 // PACKAGING INTAKE FORM
 // ============================================================
-function PackagingIntakeForm({ skus, suppliers }: { skus: PackagingSKU[]; suppliers: Supplier[] }) {
+function PackagingIntakeForm() {
+  const { data: skusRes } = useApiQuery(() => api.master.packagingSKUs(), []);
+  const { data: suppliersRes } = useApiQuery(() => api.master.suppliers(), []);
+
+  const skus = (skusRes || []) as PackagingSKU[];
+  const suppliers = (suppliersRes || []) as Supplier[];
   const [entries, setEntries] = useState<PackagingEntry[]>([]);
   const [search, setSearch] = useState('');
   const [selectedSku, setSelectedSku] = useState<PackagingSKU | null>(null);
@@ -849,6 +867,11 @@ function PackagingIntakeForm({ skus, suppliers }: { skus: PackagingSKU[]; suppli
     price: '',
     notes: '',
   });
+
+  const [submissionStatus, setSubmissionStatus] = useState<{
+    status: 'idle' | 'submitting' | 'success' | 'error';
+    summary?: { success: number; failed: number };
+  }>({ status: 'idle' });
 
   const [showSkuDropdown, setShowSkuDropdown] = useState(false);
   const [showCsvReference, setShowCsvReference] = useState(false);
@@ -888,12 +911,33 @@ function PackagingIntakeForm({ skus, suppliers }: { skus: PackagingSKU[]; suppli
 
   const finishIntake = async () => {
     if (entries.length === 0) return;
-    setSubmitting(true);
-    // In a real implementation, this would call the backend to update packaging inventory
-    await new Promise(r => setTimeout(r, 800));
-    toast.success(`${entries.length} packaging item${entries.length > 1 ? 's' : ''} registered (${entries.reduce((s, e) => s + e.qty, 0)} total units)`);
-    setEntries([]);
-    setSubmitting(false);
+    setSubmissionStatus({ status: 'submitting' });
+    
+    try {
+      const batchEntries = entries.map(e => ({
+        skuId: e.sku_id,
+        skuName: e.sku_name,
+        qty: e.qty,
+        unitCost: String(e.price),
+        notes: e.notes
+      }));
+
+      const result = await api.inventory.batchIntakePackaging(batchEntries);
+      
+      if (result.success > 0) {
+        setSubmissionStatus({ 
+          status: 'success', 
+          summary: { success: result.success, failed: result.failed } 
+        });
+        setEntries([]);
+      } else {
+        setSubmissionStatus({ status: 'error' });
+      }
+    } catch (err: any) {
+      console.error('Packaging intake failed:', err);
+      setSubmissionStatus({ status: 'error' });
+      toast.error(err.message || 'Intake failed');
+    }
   };
 
   const downloadCsvTemplate = useCallback(() => {
@@ -1253,6 +1297,22 @@ function PackagingIntakeForm({ skus, suppliers }: { skus: PackagingSKU[]; suppli
           )}
         </div>
       </div>
+      {submissionStatus.status !== 'idle' && (
+        <SubmissionOverlay
+          status={submissionStatus.status}
+          title={
+            submissionStatus.status === 'submitting' ? 'Updating Stock...' :
+            submissionStatus.status === 'success' ? 'Packaging Logged' :
+            'Update Failed'
+          }
+          subtitle={
+            submissionStatus.status === 'success' ? 
+              `${submissionStatus.summary?.success} SKUs updated in inventory.` :
+              undefined
+          }
+          onClose={() => setSubmissionStatus({ status: 'idle' })}
+        />
+      )}
     </div>
   );
 }
@@ -1288,6 +1348,11 @@ function RTSProductIntakeForm() {
   const [condition, setCondition] = useState<'new' | 'refurbished' | 'returned'>('new');
   const [notes, setNotes] = useState('');
   const barcodeRef = useRef<HTMLInputElement>(null);
+
+  const [submissionStatus, setSubmissionStatus] = useState<{
+    status: 'idle' | 'submitting' | 'success' | 'error';
+    summary?: { success: number; failed: number };
+  }>({ status: 'idle' });
 
   // Producible categories that can be logged as RTS products
   const PRODUCIBLE_CATEGORIES: EndProductCategory[] = [
@@ -1351,11 +1416,40 @@ function RTSProductIntakeForm() {
     setEntries(prev => prev.filter(e => e.id !== id));
   }, []);
 
-  const handleConfirmAll = useCallback(() => {
+  const handleConfirmAll = useCallback(async () => {
     if (entries.length === 0) return;
-    const totalQty = entries.reduce((sum, e) => sum + e.qty, 0);
-    toast.success(`${entries.length} RTS product entries (${totalQty} units) logged to inventory`);
-    setEntries([]);
+    setSubmissionStatus({ status: 'submitting' });
+    
+    try {
+      const batchEntries = entries.map(e => ({
+        productId: e.product_id,
+        productName: e.product_name,
+        productSku: e.product_sku,
+        category: e.category,
+        qty: e.qty,
+        batchRef: e.batch_ref,
+        serialNumber: e.serial_number,
+        barcode: e.barcode,
+        condition: e.condition,
+        notes: e.notes
+      }));
+
+      const result = await api.inventory.batchIntakeRts(batchEntries);
+      
+      if (result.success > 0) {
+        setSubmissionStatus({ 
+          status: 'success', 
+          summary: { success: result.success, failed: result.failed } 
+        });
+        setEntries([]);
+      } else {
+        setSubmissionStatus({ status: 'error' });
+      }
+    } catch (err: any) {
+      console.error('RTS intake failed:', err);
+      setSubmissionStatus({ status: 'error' });
+      toast.error(err.message || 'RTS registration failed');
+    }
   }, [entries]);
 
   const totalUnits = entries.reduce((sum, e) => sum + e.qty, 0);
@@ -1593,6 +1687,22 @@ function RTSProductIntakeForm() {
         <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-center">
           <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider">RTS Intake Batch — Waiting to Confirm</p>
         </div>
+      )}
+      {submissionStatus.status !== 'idle' && (
+        <SubmissionOverlay
+          status={submissionStatus.status}
+          title={
+            submissionStatus.status === 'submitting' ? 'Logging RTS Products...' :
+            submissionStatus.status === 'success' ? 'Intake Successful' :
+            'Registration Failed'
+          }
+          subtitle={
+            submissionStatus.status === 'success' ? 
+              `${submissionStatus.summary?.success} RTS products logged to inventory.` :
+              undefined
+          }
+          onClose={() => setSubmissionStatus({ status: 'idle' })}
+        />
       )}
     </div>
   );

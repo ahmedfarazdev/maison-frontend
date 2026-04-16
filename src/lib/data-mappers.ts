@@ -84,6 +84,7 @@ export function mapSupplier(row: any, purchases?: any[]): Supplier {
     supplier_id: row.supplierId,
     type: row.type,
     supplier_type: row.supplierType || 'perfume',
+    active_po_count: row.activePoCount ?? 0,
     name: row.name,
     contact_name: row.contactName ?? undefined,
     contact_email: row.contactEmail ?? '',
@@ -323,62 +324,62 @@ export function mapAlert(row: any): InventoryAlert {
 // ---- Reverse mappers (frontend snake_case → DB camelCase for mutations) ----
 export function perfumeToDb(p: Partial<Perfume>): Record<string, unknown> {
   const m: Record<string, unknown> = {};
-  if (p.master_id !== undefined) m.masterId = p.master_id;
-  if (p.brand_id !== undefined) m.brandId = p.brand_id;
+  if (p.master_id !== undefined) m.master_id = p.master_id;
+  if (p.brand_id !== undefined) m.brand_id = p.brand_id;
   if (p.brand !== undefined) m.brand = p.brand;
   if (p.name !== undefined) m.name = p.name;
   if (p.concentration !== undefined) m.concentration = p.concentration;
-  if (p.gender_target !== undefined) m.genderTarget = p.gender_target;
+  if (p.gender_target !== undefined) m.gender_target = p.gender_target;
   if (p.visibility !== undefined) m.visibility = p.visibility;
-  if (p.main_family_id !== undefined) m.mainFamilyId = p.main_family_id;
-  if (p.sub_family_id !== undefined) m.subFamilyId = p.sub_family_id;
-  if (p.aura_id !== undefined) m.auraId = p.aura_id;
-  if (p.aura_color !== undefined) m.auraColor = p.aura_color;
-  if (p.hype_level !== undefined) m.hypeLevel = p.hype_level;
-  if (p.scent_type !== undefined) m.scentType = p.scent_type;
+  if (p.main_family_id !== undefined) m.main_family_id = p.main_family_id;
+  if (p.sub_family_id !== undefined) m.sub_family_id = p.sub_family_id;
+  if (p.aura_id !== undefined) m.aura_id = p.aura_id;
+  if (p.aura_color !== undefined) m.aura_color = p.aura_color;
+  if (p.hype_level !== undefined) m.hype_level = p.hype_level;
+  if (p.scent_type !== undefined) m.scent_type = p.scent_type;
   if (p.season !== undefined) m.season = p.season;
   if (p.occasion !== undefined) m.occasion = p.occasion;
   if (p.personality !== undefined) m.personality = p.personality;
-  if (p.notes_top !== undefined) m.notesTop = p.notes_top;
-  if (p.notes_heart !== undefined) m.notesHeart = p.notes_heart;
-  if (p.notes_base !== undefined) m.notesBase = p.notes_base;
-  if (p.proposed_vault !== undefined) m.proposedVault = p.proposed_vault;
-  if (p.scent_signature !== undefined) m.scentSignature = p.scent_signature;
-  if (p.aura_verse !== undefined) m.auraVerse = p.aura_verse;
-  if (p.scent_prose !== undefined) m.scentProse = p.scent_prose;
-  if (p.scent_story !== undefined) m.scentStory = p.scent_story;
-  if (p.made_in !== undefined) m.madeIn = p.made_in;
-  if (p.retail_price !== undefined) m.retailPrice = String(p.retail_price);
-  if (p.wholesale_price !== undefined) m.wholesalePrice = String(p.wholesale_price);
-  if (p.reference_size_ml !== undefined) m.referenceSizeMl = p.reference_size_ml;
-  if (p.price_per_ml !== undefined) m.pricePerMl = String(p.price_per_ml);
-  if (p.price_multiplier !== undefined) m.priceMultiplier = String(p.price_multiplier);
+  if (p.notes_top !== undefined) m.notes_top = p.notes_top;
+  if (p.notes_heart !== undefined) m.notes_heart = p.notes_heart;
+  if (p.notes_base !== undefined) m.notes_base = p.notes_base;
+  if (p.proposed_vault !== undefined) m.proposed_vault = p.proposed_vault;
+  if (p.scent_signature !== undefined) m.scent_signature = p.scent_signature;
+  if (p.aura_verse !== undefined) m.aura_verse = p.aura_verse;
+  if (p.scent_prose !== undefined) m.scent_prose = p.scent_prose;
+  if (p.scent_story !== undefined) m.scent_story = p.scent_story;
+  if (p.made_in !== undefined) m.made_in = p.made_in;
+  if (p.retail_price !== undefined) m.retail_price = String(p.retail_price);
+  if (p.wholesale_price !== undefined) m.wholesale_price = String(p.wholesale_price);
+  if (p.reference_size_ml !== undefined) m.reference_sizeMl = p.reference_size_ml;
+  if (p.price_per_ml !== undefined) m.price_perMl = String(p.price_per_ml);
+  if (p.price_multiplier !== undefined) m.price_multiplier = String(p.price_multiplier);
   if (p.surcharge !== undefined) m.surcharge = String(p.surcharge);
-  if (p.surcharge_category !== undefined) m.surchargeCategory = p.surcharge_category;
-  if (p.decant_pricing !== undefined) m.decantPricing = p.decant_pricing;
-  if (p.in_stock !== undefined) m.inStock = p.in_stock;
-  if (p.bottle_image_url !== undefined) m.bottleImageUrl = p.bottle_image_url;
-  if (p.bottle_images !== undefined) m.bottleImages = p.bottle_images;
-  if (p.brand_image_url !== undefined) m.brandImageUrl = p.brand_image_url;
+  if (p.surcharge_category !== undefined) m.surcharge_category = p.surcharge_category;
+  if (p.decant_pricing !== undefined) m.decant_pricing = p.decant_pricing;
+  if (p.in_stock !== undefined) m.in_stock = p.in_stock;
+  if (p.bottle_image_url !== undefined) m.bottle_imageUrl = p.bottle_image_url;
+  if (p.bottle_images !== undefined) m.bottle_images = p.bottle_images;
+  if (p.brand_image_url !== undefined) m.brand_imageUrl = p.brand_image_url;
   return m;
 }
 
 export function bottleToDb(b: Partial<InventoryBottle>): Record<string, unknown> {
   const m: Record<string, unknown> = {};
-  if (b.bottle_id !== undefined) m.bottleId = b.bottle_id;
-  if (b.master_id !== undefined) m.masterId = b.master_id;
-  if (b.bottle_type !== undefined) m.bottleType = b.bottle_type;
-  if (b.size_ml !== undefined) m.sizeMl = b.size_ml;
-  if (b.current_ml !== undefined) m.currentMl = String(b.current_ml);
-  if (b.supplier_id !== undefined) m.supplierId = b.supplier_id;
-  if (b.purchase_price !== undefined) m.purchasePrice = String(b.purchase_price);
-  if (b.purchase_date !== undefined) m.purchaseDate = b.purchase_date;
-  if (b.location_code !== undefined) m.locationCode = b.location_code;
+  if (b.bottle_id !== undefined) m.bottle_id = b.bottle_id;
+  if (b.master_id !== undefined) m.master_id = b.master_id;
+  if (b.bottle_type !== undefined) m.bottle_type = b.bottle_type;
+  if (b.size_ml !== undefined) m.size_ml = b.size_ml;
+  if (b.current_ml !== undefined) m.current_ml = String(b.current_ml);
+  if (b.supplier_id !== undefined) m.supplier_id = b.supplier_id;
+  if (b.purchase_price !== undefined) m.purchase_price = String(b.purchase_price);
+  if (b.purchase_date !== undefined) m.purchase_date = b.purchase_date;
+  if (b.location_code !== undefined) m.location_code = b.location_code;
   if (b.status !== undefined) m.status = b.status;
-  if (b.manufacturer_id !== undefined) m.manufacturerId = b.manufacturer_id;
-  if (b.batch_number !== undefined) m.batchNumber = b.batch_number;
+  if (b.manufacturer_id !== undefined) m.manufacturer_id = b.manufacturer_id;
+  if (b.batch_number !== undefined) m.batch_number = b.batch_number;
   if (b.barcode !== undefined) m.barcode = b.barcode;
-  if (b.qr_data !== undefined) m.qrData = b.qr_data;
+  if (b.qr_data !== undefined) m.qr_data = b.qr_data;
   if (b.photos !== undefined) m.photos = b.photos;
   if (b.notes !== undefined) m.notes = b.notes;
   return m;
@@ -403,10 +404,10 @@ export function syringeToDb(s: Partial<Syringe>): Record<string, unknown> {
 
 export function brandToDb(b: Partial<Brand>): Record<string, unknown> {
   const m: Record<string, unknown> = {};
-  if (b.brand_id !== undefined) m.brandId = b.brand_id;
+  if (b.brand_id !== undefined) m.brand_id = b.brand_id;
   if (b.name !== undefined) m.name = b.name;
-  if (b.made_in !== undefined) m.madeIn = b.made_in;
-  if (b.logo_url !== undefined) m.logoUrl = b.logo_url;
+  if (b.made_in !== undefined) m.made_in = b.made_in;
+  if (b.logo_url !== undefined) m.logo_url = b.logo_url;
   if (b.website !== undefined) m.website = b.website;
   if (b.notes !== undefined) m.notes = b.notes;
   if (b.active !== undefined) m.active = b.active;

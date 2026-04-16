@@ -29,22 +29,22 @@ interface ProductMarginRow {
   fixedCost: number;
   variableCost: number;
   shippingCost: number;
-  bomCost: number;
-  sellingPrice: number;
+  bom_cost: number;
+  selling_price: number;
   grossMargin: number;
-  marginPercent: number;
+  margin_percent: number;
   multiplier: number;
   status: 'healthy' | 'warning' | 'critical' | 'no_price' | 'no_bom';
 }
 
-type SortField = 'name' | 'bomCost' | 'sellingPrice' | 'marginPercent' | 'multiplier';
+type SortField = 'name' | 'bom_cost' | 'selling_price' | 'margin_percent' | 'multiplier';
 type SortDir = 'asc' | 'desc';
 
 export default function BOMPricingReport() {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [sortField, setSortField] = useState<SortField>('marginPercent');
+  const [sortField, setSortField] = useState<SortField>('margin_percent');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
   // Build margin analysis data
@@ -59,19 +59,19 @@ export default function BOMPricingReport() {
       const fixedCost = bom?.total_cost || (product.fixed_price || 0);
       const variableCost = bom?.variable_cost || (product.variable_price || 0);
       const shippingCost = shippingBom?.total_cost || (product.shipping_cost || 0);
-      const bomCost = fixedCost + variableCost + shippingCost;
-      const sellingPrice = product.selling_price || 0;
-      const grossMargin = sellingPrice - bomCost;
-      const marginPercent = sellingPrice > 0 ? (grossMargin / sellingPrice) * 100 : 0;
-      const multiplier = bomCost > 0 ? sellingPrice / bomCost : 0;
+      const bom_cost = fixedCost + variableCost + shippingCost;
+      const selling_price = product.selling_price || 0;
+      const grossMargin = selling_price - bom_cost;
+      const margin_percent = selling_price > 0 ? (grossMargin / selling_price) * 100 : 0;
+      const multiplier = bom_cost > 0 ? selling_price / bom_cost : 0;
 
       let status: ProductMarginRow['status'] = 'healthy';
       if (!bom) status = 'no_bom';
-      else if (sellingPrice <= 0) status = 'no_price';
-      else if (marginPercent < 20) status = 'critical';
-      else if (marginPercent < 40) status = 'warning';
+      else if (selling_price <= 0) status = 'no_price';
+      else if (margin_percent < 20) status = 'critical';
+      else if (margin_percent < 40) status = 'warning';
 
-      return { product, bom, shippingBom, fixedCost, variableCost, shippingCost, bomCost, sellingPrice, grossMargin, marginPercent, multiplier, status };
+      return { product, bom, shippingBom, fixedCost, variableCost, shippingCost, bom_cost, selling_price, grossMargin, margin_percent, multiplier, status };
     });
   }, []);
 
@@ -90,11 +90,11 @@ export default function BOMPricingReport() {
       let aVal: number | string, bVal: number | string;
       switch (sortField) {
         case 'name': aVal = a.product.name; bVal = b.product.name; break;
-        case 'bomCost': aVal = a.bomCost; bVal = b.bomCost; break;
-        case 'sellingPrice': aVal = a.sellingPrice; bVal = b.sellingPrice; break;
-        case 'marginPercent': aVal = a.marginPercent; bVal = b.marginPercent; break;
+        case 'bom_cost': aVal = a.bom_cost; bVal = b.bom_cost; break;
+        case 'selling_price': aVal = a.selling_price; bVal = b.selling_price; break;
+        case 'margin_percent': aVal = a.margin_percent; bVal = b.margin_percent; break;
         case 'multiplier': aVal = a.multiplier; bVal = b.multiplier; break;
-        default: aVal = a.marginPercent; bVal = b.marginPercent;
+        default: aVal = a.margin_percent; bVal = b.margin_percent;
       }
       if (typeof aVal === 'string') {
         return sortDir === 'asc' ? aVal.localeCompare(bVal as string) : (bVal as string).localeCompare(aVal);
@@ -109,13 +109,13 @@ export default function BOMPricingReport() {
   const stats = useMemo(() => {
     const withPrice = rows.filter(r => r.status !== 'no_price' && r.status !== 'no_bom');
     const avgMargin = withPrice.length > 0
-      ? withPrice.reduce((sum, r) => sum + r.marginPercent, 0) / withPrice.length
+      ? withPrice.reduce((sum, r) => sum + r.margin_percent, 0) / withPrice.length
       : 0;
     const avgMultiplier = withPrice.length > 0
       ? withPrice.reduce((sum, r) => sum + r.multiplier, 0) / withPrice.length
       : 0;
-    const totalBOMCost = rows.reduce((sum, r) => sum + r.bomCost, 0);
-    const totalRevenue = rows.reduce((sum, r) => sum + r.sellingPrice, 0);
+    const totalBOMCost = rows.reduce((sum, r) => sum + r.bom_cost, 0);
+    const totalRevenue = rows.reduce((sum, r) => sum + r.selling_price, 0);
     const criticalCount = rows.filter(r => r.status === 'critical').length;
     const warningCount = rows.filter(r => r.status === 'warning').length;
 
@@ -139,10 +139,10 @@ export default function BOMPricingReport() {
       'Fixed Cost (AED)': r.fixedCost.toFixed(2),
       'Variable Cost (AED)': r.variableCost.toFixed(2),
       'Shipping Cost (AED)': r.shippingCost.toFixed(2),
-      'Total BOM Cost (AED)': r.bomCost.toFixed(2),
-      'Selling Price (AED)': r.sellingPrice.toFixed(2),
+      'Total BOM Cost (AED)': r.bom_cost.toFixed(2),
+      'Selling Price (AED)': r.selling_price.toFixed(2),
       'Gross Margin (AED)': r.grossMargin.toFixed(2),
-      'Margin %': r.marginPercent.toFixed(1),
+      'Margin %': r.margin_percent.toFixed(1),
       'Multiplier': r.multiplier.toFixed(2),
       Status: r.status,
     }));
@@ -324,10 +324,10 @@ export default function BOMPricingReport() {
                     { field: null, label: 'Fixed', width: 'min-w-[70px]' },
                     { field: null, label: 'Variable', width: 'min-w-[70px]' },
                     { field: null, label: 'Shipping', width: 'min-w-[70px]' },
-                    { field: 'bomCost' as SortField, label: 'Total', width: 'min-w-[90px]' },
-                    { field: 'sellingPrice' as SortField, label: 'Sell Price', width: 'min-w-[100px]' },
+                    { field: 'bom_cost' as SortField, label: 'Total', width: 'min-w-[90px]' },
+                    { field: 'selling_price' as SortField, label: 'Sell Price', width: 'min-w-[100px]' },
                     { field: null, label: 'Margin', width: 'min-w-[100px]' },
-                    { field: 'marginPercent' as SortField, label: '%', width: 'min-w-[60px]' },
+                    { field: 'margin_percent' as SortField, label: '%', width: 'min-w-[60px]' },
                     { field: 'multiplier' as SortField, label: 'Mult.', width: 'min-w-[60px]' },
                     { field: null, label: 'Status', width: 'min-w-[80px]' },
                   ].map(col => (
@@ -397,22 +397,22 @@ export default function BOMPricingReport() {
                       </td>
                       <td className="py-3 px-4">
                         <span className="text-sm font-mono font-semibold">
-                          {row.bomCost > 0 ? `${row.bomCost.toFixed(2)}` : '—'}
+                          {row.bom_cost > 0 ? `${row.bom_cost.toFixed(2)}` : '—'}
                         </span>
                       </td>
                       <td className="py-3 px-4">
                         <span className="text-sm font-mono font-semibold">
-                          {row.sellingPrice > 0 ? `${row.sellingPrice.toFixed(2)}` : '—'}
+                          {row.selling_price > 0 ? `${row.selling_price.toFixed(2)}` : '—'}
                         </span>
                       </td>
                       <td className="py-3 px-4">
                         <span className={cn('text-sm font-mono', row.grossMargin > 0 ? 'text-success' : row.grossMargin < 0 ? 'text-destructive' : 'text-muted-foreground')}>
-                          {row.sellingPrice > 0 ? `${row.grossMargin.toFixed(2)}` : '—'}
+                          {row.selling_price > 0 ? `${row.grossMargin.toFixed(2)}` : '—'}
                         </span>
                       </td>
                       <td className="py-3 px-4">
-                        <span className={cn('text-sm font-semibold', getMarginColor(row.marginPercent, row.status))}>
-                          {row.status !== 'no_price' && row.status !== 'no_bom' ? `${row.marginPercent.toFixed(1)}%` : '—'}
+                        <span className={cn('text-sm font-semibold', getMarginColor(row.margin_percent, row.status))}>
+                          {row.status !== 'no_price' && row.status !== 'no_bom' ? `${row.margin_percent.toFixed(1)}%` : '—'}
                         </span>
                       </td>
                       <td className="py-3 px-4">
@@ -450,12 +450,12 @@ export default function BOMPricingReport() {
               <div className="space-y-2">
                 {rows
                   .filter(r => r.status === 'healthy')
-                  .sort((a, b) => b.marginPercent - a.marginPercent)
+                  .sort((a, b) => b.margin_percent - a.margin_percent)
                   .slice(0, 5)
                   .map(r => (
                     <div key={r.product.product_id} className="flex items-center justify-between text-sm">
                       <span className="truncate flex-1 min-w-0">{r.product.name}</span>
-                      <span className="text-success font-semibold ml-2">{r.marginPercent.toFixed(1)}%</span>
+                      <span className="text-success font-semibold ml-2">{r.margin_percent.toFixed(1)}%</span>
                     </div>
                   ))}
                 {rows.filter(r => r.status === 'healthy').length === 0 && (
@@ -476,13 +476,13 @@ export default function BOMPricingReport() {
               <div className="space-y-2">
                 {rows
                   .filter(r => r.status === 'critical' || r.status === 'warning')
-                  .sort((a, b) => a.marginPercent - b.marginPercent)
+                  .sort((a, b) => a.margin_percent - b.margin_percent)
                   .slice(0, 5)
                   .map(r => (
                     <div key={r.product.product_id} className="flex items-center justify-between text-sm">
                       <span className="truncate flex-1 min-w-0">{r.product.name}</span>
                       <span className={cn('font-semibold ml-2', r.status === 'critical' ? 'text-destructive' : 'text-warning')}>
-                        {r.marginPercent.toFixed(1)}%
+                        {r.margin_percent.toFixed(1)}%
                       </span>
                     </div>
                   ))}

@@ -17,6 +17,12 @@ export function useApiQuery<T>(
   fetcher: () => Promise<ApiResponse<T>>,
   deps: unknown[] = []
 ): UseApiQueryResult<T> {
+  if (typeof fetcher !== 'function') {
+    console.error('useApiQuery was called with an invalid fetcher!', fetcher);
+    // Return a dummy result to prevent crash
+    return { data: null, isLoading: false, error: 'Invalid fetcher', refetch: () => {} };
+  }
+
   const queryKey = useMemo(() => {
     // Use function source + deps so calls to the same endpoint can share cache across screens.
     const signature = fetcher.toString();
