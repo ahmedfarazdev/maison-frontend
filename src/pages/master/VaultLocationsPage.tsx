@@ -6,7 +6,7 @@
 // auto-generated location codes, and Add Zone wizard
 // ============================================================
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { PageHeader, StatusBadge, SectionCard } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -167,6 +167,7 @@ function filterPerfumeSearchResults<T extends SearchablePerfume>(
 // ---- Slot Cell Component ----
 function SlotCell({ loc, onClick }: { loc: VaultLocation; onClick: (loc: VaultLocation) => void }) {
   const tc = TYPE_COLORS[loc.type];
+  const displayName = loc.perfume_name || (loc.master_id ? getPerfumeName(loc.master_id) : 'Occupied');
   return (
     <button
       onClick={() => onClick(loc)}
@@ -176,13 +177,16 @@ function SlotCell({ loc, onClick }: { loc: VaultLocation; onClick: (loc: VaultLo
           ? `${tc.border} ${tc.bg} shadow-sm hover:shadow-md hover:scale-[1.03]`
           : 'border-dashed border-border/60 hover:border-border hover:bg-muted/30 hover:scale-[1.02]',
       )}
-      title={loc.occupied ? `${loc.perfume_name || 'Occupied'} — ${loc.location_code}` : `Empty — ${loc.location_code}`}
+      title={loc.occupied ? `${displayName} — ${loc.location_code}` : `Empty — ${loc.location_code}`}
     >
       {loc.occupied ? (
         <>
           <div className={cn('w-2.5 h-2.5 rounded-full', tc.dot)} />
           <span className="text-[8px] font-mono font-bold text-foreground/80 leading-none truncate max-w-full px-0.5">
             {loc.slot}
+          </span>
+          <span className="text-[7px] font-medium text-foreground/70 leading-tight text-center truncate max-w-full px-1">
+            {displayName}
           </span>
         </>
       ) : (
@@ -341,6 +345,10 @@ function AssignPerfumeDialog({ location, onAssign, onClear, onDelete, isAssignin
   const [searchResults, setSearchResults] = useState<SearchablePerfume[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedPerfume, setSelectedPerfume] = useState<SearchablePerfume | null>(null);
+  const [initialPerfumes, setInitialPerfumes] = useState<SearchablePerfume[]>([]);
+  const [loadingInitialPerfumes, setLoadingInitialPerfumes] = useState(false);
+  const [showPerfumeDropdown, setShowPerfumeDropdown] = useState(false);
+  const perfumeDropdownRef = useRef<HTMLDivElement>(null);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
@@ -371,7 +379,53 @@ function AssignPerfumeDialog({ location, onAssign, onClear, onDelete, isAssignin
     return () => clearTimeout(handler);
   }, [search]);
 
-  const filtered = filterPerfumeSearchResults(searchResults, search, 20);
+  useEffect(() => {
+    if (!showPerfumeDropdown || initialPerfumes.length > 0 || loadingInitialPerfumes) return;
+
+    let cancelled = false;
+    setLoadingInitialPerfumes(true);
+
+    api.perfumes.list()
+      .then((res: any) => {
+        if (cancelled) return;
+        const items = Array.isArray(res) ? res : res?.data || [];
+        const mapped = items.map((perfume: any) => ({
+          id: perfume.id || perfume.master_id,
+          master_id: perfume.master_id,
+          name: perfume.name || '',
+          brand: perfume.brand || '',
+          _name: perfume.brand && perfume.name
+            ? `${perfume.brand} — ${perfume.name}`
+            : perfume.name || perfume.master_id,
+        }));
+        setInitialPerfumes(mapped);
+      })
+      .catch(() => {
+        if (!cancelled) setInitialPerfumes([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingInitialPerfumes(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showPerfumeDropdown, initialPerfumes.length, loadingInitialPerfumes]);
+
+  const basePerfumes = search.trim() ? searchResults : initialPerfumes;
+  const filtered = filterPerfumeSearchResults(basePerfumes, search, 20);
+  const isLoadingResults = search.trim() ? loading : loadingInitialPerfumes;
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (!showPerfumeDropdown) return;
+      if (perfumeDropdownRef.current && !perfumeDropdownRef.current.contains(e.target as Node)) {
+        setShowPerfumeDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showPerfumeDropdown]);
 
 
   const tc = TYPE_COLORS[location.type];
@@ -466,29 +520,47 @@ function AssignPerfumeDialog({ location, onAssign, onClear, onDelete, isAssignin
             <div className="space-y-4">
               <div>
                 <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold block mb-1.5">Search Perfume</label>
-                <div className="relative">
+                <div ref={perfumeDropdownRef} className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by perfume name, brand, or Master ID..." className="pl-9" autoFocus />
+                  <Input
+                    value={search}
+                    onChange={e => { setSearch(e.target.value); setShowPerfumeDropdown(true); }}
+                    onFocus={() => setShowPerfumeDropdown(true)}
+                    placeholder="Search by perfume name, brand, or Master ID..."
+                    className="pl-9"
+                    autoFocus
+                  />
+                  {showPerfumeDropdown && (
+                    <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                      {isLoadingResults ? (
+                        <div className="text-center py-4">
+                          <Loader2 className="w-4 h-4 animate-spin inline-block" />
+                        </div>
+                      ) : (
+                        <div className="space-y-1 p-1">
+                          {filtered.map(perfume => (
+                            <button key={perfume.id} onClick={() => { setSelectedPerfume(perfume); setSearch(''); setShowPerfumeDropdown(false); }}
+                              className={cn('w-full text-left px-3 py-2 rounded-md text-sm transition-colors hover:bg-muted/50',
+                                selectedPerfume?.id === perfume.id && 'bg-gold/10 border border-gold/30')}>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="font-medium">{perfume._name}</p>
+                                  <p className="text-[10px] font-mono text-muted-foreground">{perfume.master_id}</p>
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                          {filtered.length === 0 && (
+                            <p className="text-xs text-muted-foreground text-center py-3">
+                              {search.trim() ? 'No perfumes found' : 'No perfumes available'}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
-              {loading && <div className="text-center py-4"><Loader2 className="w-4 h-4 animate-spin inline-block" /></div>}
-              {!loading && search && (
-                <div className="max-h-48 overflow-y-auto space-y-1 border border-border rounded-lg p-1">
-                  {filtered.map(perfume => (
-                    <button key={perfume.id} onClick={() => { setSelectedPerfume(perfume); setSearch(''); }}
-                      className={cn('w-full text-left px-3 py-2 rounded-md text-sm transition-colors hover:bg-muted/50',
-                        selectedPerfume?.id === perfume.id && 'bg-gold/10 border border-gold/30')}>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">{perfume._name}</p>
-                          <p className="text-[10px] font-mono text-muted-foreground">{perfume.master_id}</p>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                  {filtered.length === 0 && <p className="text-xs text-muted-foreground text-center py-3">No perfumes found</p>}
-                </div>
-              )}
               {selectedPerfume && (
                 <div className="bg-gold/5 border border-gold/20 rounded-lg p-3">
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Selected Perfume</p>
@@ -601,6 +673,10 @@ function AddBottleToLocationDialog({
   const [perfumeSearch, setPerfumeSearch] = useState('');
   const [searchResults, setSearchResults] = useState<SearchablePerfume[]>([]);
   const [selectedPerfume, setSelectedPerfume] = useState<SearchablePerfume | null>(null);
+  const [initialPerfumes, setInitialPerfumes] = useState<SearchablePerfume[]>([]);
+  const [loadingInitialPerfumes, setLoadingInitialPerfumes] = useState(false);
+  const [showPerfumeDropdown, setShowPerfumeDropdown] = useState(false);
+  const perfumeDropdownRef = useRef<HTMLDivElement>(null);
 
   // Step 2: Location selection
   const [locationFilter, setLocationFilter] = useState<LocationType>('sealed');
@@ -634,7 +710,42 @@ function AddBottleToLocationDialog({
     return () => clearTimeout(handler);
   }, [perfumeSearch]);
 
-  const filteredPerfumes = filterPerfumeSearchResults(searchResults, perfumeSearch, 20);
+  useEffect(() => {
+    if (!showPerfumeDropdown || initialPerfumes.length > 0 || loadingInitialPerfumes) return;
+
+    let cancelled = false;
+    setLoadingInitialPerfumes(true);
+
+    api.perfumes.list()
+      .then((res: any) => {
+        if (cancelled) return;
+        const items = Array.isArray(res) ? res : res?.data || [];
+        const mapped = items.map((perfume: any) => ({
+          id: perfume.id || perfume.master_id,
+          master_id: perfume.master_id,
+          name: perfume.name || '',
+          brand: perfume.brand || '',
+          _name: perfume.brand && perfume.name
+            ? `${perfume.brand} — ${perfume.name}`
+            : perfume.name || perfume.master_id,
+        }));
+        setInitialPerfumes(mapped);
+      })
+      .catch(() => {
+        if (!cancelled) setInitialPerfumes([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingInitialPerfumes(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showPerfumeDropdown, initialPerfumes.length, loadingInitialPerfumes]);
+
+  const basePerfumes = perfumeSearch.trim() ? searchResults : initialPerfumes;
+  const filteredPerfumes = filterPerfumeSearchResults(basePerfumes, perfumeSearch, 20);
+  const isLoadingResults = perfumeSearch.trim() ? loading : loadingInitialPerfumes;
 
   // Auto-select next available location
   const nextAvailableLocation = useMemo(() => {
@@ -649,6 +760,7 @@ function AddBottleToLocationDialog({
   const handleSelectPerfume = (perfume: SearchablePerfume) => {
     setSelectedPerfume(perfume);
     setPerfumeSearch('');
+    setShowPerfumeDropdown(false);
   };
 
   const handleGoToLocation = () => {
@@ -664,6 +776,17 @@ function AddBottleToLocationDialog({
     { key: 'confirm', label: 'Confirm', num: 3 },
   ];
   const currentStepIdx = steps.findIndex(s => s.key === step);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (!showPerfumeDropdown) return;
+      if (perfumeDropdownRef.current && !perfumeDropdownRef.current.contains(e.target as Node)) {
+        setShowPerfumeDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showPerfumeDropdown]);
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -711,11 +834,45 @@ function AddBottleToLocationDialog({
                 <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold block mb-1.5">
                   Search Perfumes
                 </label>
-                <div className="relative">
+                <div ref={perfumeDropdownRef} className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input value={perfumeSearch} onChange={e => setPerfumeSearch(e.target.value)}
+                  <Input value={perfumeSearch} onChange={e => { setPerfumeSearch(e.target.value); setShowPerfumeDropdown(true); }}
+                    onFocus={() => setShowPerfumeDropdown(true)}
                     placeholder="Search by perfume name, brand, or Master ID..."
                     className="pl-9 h-11" autoFocus />
+                  {showPerfumeDropdown && (
+                    <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-xl max-h-64 overflow-y-auto">
+                      {isLoadingResults ? (
+                        <div className="text-center py-6">
+                          <div className="w-5 h-5 border-2 border-gold/30 border-t-gold rounded-full animate-spin mx-auto mb-2" />
+                          <p className="text-xs text-muted-foreground">Loading perfumes...</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1 p-1">
+                          {filteredPerfumes.map(perfume => (
+                            <button key={perfume.id} onClick={() => handleSelectPerfume(perfume)}
+                              className={cn('w-full text-left px-4 py-3 rounded-lg text-sm transition-colors hover:bg-muted/50',
+                                selectedPerfume?.id === perfume.id && 'bg-gold/10 border border-gold/30')}>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="font-semibold">{perfume._name}</p>
+                                  <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{perfume.master_id}</p>
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                          {filteredPerfumes.length === 0 && (
+                            <div className="text-center py-6">
+                              <Wine className="w-8 h-8 text-muted-foreground/20 mx-auto mb-2" />
+                              <p className="text-xs text-muted-foreground">
+                                {perfumeSearch.trim() ? 'No perfumes found.' : 'No perfumes available.'}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -731,33 +888,6 @@ function AddBottleToLocationDialog({
                 </div>
               )}
 
-              {loading ? (
-                <div className="text-center py-8">
-                  <div className="w-6 h-6 border-2 border-gold/30 border-t-gold rounded-full animate-spin mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">Searching perfumes...</p>
-                </div>
-              ) : (
-                <div className="space-y-1 border border-border rounded-lg p-1 max-h-64 overflow-y-auto">
-                  {filteredPerfumes.map(perfume => (
-                    <button key={perfume.id} onClick={() => handleSelectPerfume(perfume)}
-                      className={cn('w-full text-left px-4 py-3 rounded-lg text-sm transition-colors hover:bg-muted/50',
-                        selectedPerfume?.id === perfume.id && 'bg-gold/10 border border-gold/30')}>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-semibold">{perfume._name}</p>
-                          <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{perfume.master_id}</p>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                  {filteredPerfumes.length === 0 && (
-                    <div className="text-center py-6">
-                      <Wine className="w-8 h-8 text-muted-foreground/20 mx-auto mb-2" />
-                      <p className="text-xs text-muted-foreground">No perfumes found.</p>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           )}
 

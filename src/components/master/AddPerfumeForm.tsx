@@ -6,7 +6,7 @@
 // Currency: AED only
 // ============================================================
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -135,7 +135,7 @@ const INITIAL_STATE: FormState = {
   surcharge: '',
   surcharge_category: '',
   decant_pricing: Object.fromEntries(DECANT_SIZES.map(s => [s, ''])),
-  in_stock: true,
+  in_stock: false,
   bottle_image_url: '',
   bottle_images: [],
 };
@@ -218,7 +218,7 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
         editPerfume.decant_pricing?.find(d => d.size_ml === s)?.price?.toString() || '',
       ])
     ),
-    in_stock: editPerfume.in_stock ?? true,
+    in_stock: editPerfume.in_stock ?? false,
     bottle_image_url: editPerfume.bottle_image_url || '',
     bottle_images: editPerfume.bottle_images || [],
   } : null;
@@ -228,7 +228,19 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
   const [pendingImageFiles, setPendingImageFiles] = useState<File[]>([]);
   const [brandSearch, setBrandSearch] = useState(editPerfume?.brand || '');
   const [showBrandDropdown, setShowBrandDropdown] = useState(false);
+  const brandDropdownRef = useRef<HTMLDivElement>(null);
   // isDragging and fileInputRef removed — now handled by MultiImageUpload
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (!showBrandDropdown) return;
+      if (brandDropdownRef.current && !brandDropdownRef.current.contains(e.target as Node)) {
+        setShowBrandDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showBrandDropdown]);
 
   // Live Master ID — fixed in edit mode
   const masterId = useMemo(
@@ -517,7 +529,7 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
 
               <div className="grid grid-cols-2 gap-4">
                 {/* Brand — Searchable Dropdown */}
-                <div className="col-span-2 relative">
+                <div ref={brandDropdownRef} className="col-span-2 relative">
                   <label className={labelCls}>Brand Name *</label>
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
@@ -621,10 +633,8 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
                     onFocus={() => setShowBrandDropdown(false)}
                     className={selectCls}>
                     <option value="">Select...</option>
-                    <option value="Signature Vault">Signature Vault</option>
-                    <option value="Discovery Vault">Discovery Vault</option>
-                    <option value="Collector Vault">Collector Vault</option>
-                    <option value="Exclusive Vault">Exclusive Vault</option>
+                    <option value="EM Vault">EM Vault</option>
+                    <option value="Main Vault">Main Vault</option>
                   </select>
                 </div>
                 <div>
@@ -1017,19 +1027,6 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 pt-2">
-                <button onClick={() => update('in_stock', !form.in_stock)}
-                  className={cn(
-                    'w-10 h-5 rounded-full transition-colors relative',
-                    form.in_stock ? 'bg-success' : 'bg-muted'
-                  )}>
-                  <div className={cn(
-                    'w-4 h-4 rounded-full bg-white shadow absolute top-0.5 transition-transform',
-                    form.in_stock ? 'translate-x-5' : 'translate-x-0.5'
-                  )} />
-                </button>
-                <span className="text-sm">In Stock</span>
-              </div>
             </div>
           )}
 

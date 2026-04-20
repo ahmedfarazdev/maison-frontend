@@ -4,7 +4,7 @@
 // Sizes: 5ml, 10ml, 20ml, custom. One syringe = one perfume.
 // ============================================================
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { PageHeader, StatusBadge } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -98,6 +98,10 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingPerfume, setIsLoadingPerfume] = useState(!!syringe?.assigned_master_id);
   const [selectedPerfume, setSelectedPerfume] = useState<PerfumeSearchResult | null>(null);
+  const [initialPerfumes, setInitialPerfumes] = useState<PerfumeSearchResult[]>([]);
+  const [isLoadingInitialPerfumes, setIsLoadingInitialPerfumes] = useState(false);
+  const [showPerfumeDropdown, setShowPerfumeDropdown] = useState(false);
+  const perfumeDropdownRef = useRef<HTMLDivElement>(null);
 
   const formatPerfumeLabel = (perfume: PerfumeSearchResult) => {
     if (perfume.brand && perfume.name) return `${perfume.brand} — ${perfume.name}`;
@@ -183,6 +187,48 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
   }, [searchResults]);
 
   const filteredPerfumes = availablePerfumes.slice(0, 8);
+  const displayPerfumes = perfumeSearch.trim() ? filteredPerfumes : initialPerfumes.slice(0, 8);
+
+  useEffect(() => {
+    if (!showPerfumeDropdown || initialPerfumes.length > 0 || isLoadingInitialPerfumes) return;
+
+    let cancelled = false;
+    setIsLoadingInitialPerfumes(true);
+
+    api.perfumes.list()
+      .then((res: any) => {
+        if (cancelled) return;
+        const items = Array.isArray(res) ? res : res?.data || [];
+        const mapped = items.map((p: any) => ({
+          id: p.id || p.master_id,
+          master_id: p.master_id,
+          name: p.name || '',
+          brand: p.brand || '',
+        }));
+        setInitialPerfumes(mapped);
+      })
+      .catch(() => {
+        if (!cancelled) setInitialPerfumes([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingInitialPerfumes(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showPerfumeDropdown, initialPerfumes.length, isLoadingInitialPerfumes]);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (!showPerfumeDropdown) return;
+      if (perfumeDropdownRef.current && !perfumeDropdownRef.current.contains(e.target as Node)) {
+        setShowPerfumeDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showPerfumeDropdown]);
 
   const updateField = (field: keyof Syringe, value: unknown) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -272,25 +318,28 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
               </div>
             ) : (
               <div>
-                <div className="relative">
+                <div ref={perfumeDropdownRef} className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input value={perfumeSearch} onChange={e => setPerfumeSearch(e.target.value)}
-                    placeholder="Search perfume to assign..." className="pl-9" />
-                </div>
-                {perfumeSearch && (
-                  <div className="mt-1 max-h-48 overflow-y-auto space-y-1 border border-border rounded-lg p-1">
-                    {isSearching && (
+                  <Input
+                    value={perfumeSearch}
+                    onChange={e => { setPerfumeSearch(e.target.value); setShowPerfumeDropdown(true); }}
+                    onFocus={() => setShowPerfumeDropdown(true)}
+                    placeholder="Search perfume to assign..."
+                    className="pl-9"
+                  />
+                  {showPerfumeDropdown && (
+                    <div className="absolute z-20 top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto space-y-1 border border-border rounded-lg p-1 bg-card shadow-lg">
+                    {(perfumeSearch.trim() ? isSearching : isLoadingInitialPerfumes) && (
                       <div className="text-center py-2">
                         <Loader2 className="w-4 h-4 animate-spin inline-block" />
                       </div>
                     )}
-                    {!isSearching && filteredPerfumes.map(p => {
+                    {!isSearching && !isLoadingInitialPerfumes && displayPerfumes.map(p => {
                       const isAssigned = existingAssignments.has(p.master_id) && syringe?.assigned_master_id !== p.master_id;
                       return (
-                        <button key={p.master_id} onClick={() => { if (!isAssigned) { setSelectedPerfume(p); setPerfumeSearch(''); } }}
-                          disabled={isAssigned}
-                          className={cn('w-full text-left px-3 py-2 rounded-md text-sm transition-colors',
-                            isAssigned ? 'opacity-40 cursor-not-allowed' : 'hover:bg-muted/50')}>
+                        <button key={p.master_id} onClick={() => { setSelectedPerfume(p); setPerfumeSearch(''); setShowPerfumeDropdown(false); }}
+                          className={cn('w-full text-left px-3 py-2 rounded-md text-sm transition-colors hover:bg-muted/50',
+                            isAssigned && 'border border-warning/30 bg-warning/5')}>
                           <p className="font-medium text-xs">{formatPerfumeLabel(p)}</p>
                           <p className="text-[10px] font-mono text-muted-foreground">
                             {p.master_id} {isAssigned && '(already assigned)'}
@@ -298,11 +347,14 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
                         </button>
                       );
                     })}
-                    {!isSearching && filteredPerfumes.length === 0 && (
-                      <p className="text-xs text-muted-foreground text-center py-2">No available perfumes</p>
+                    {!isSearching && !isLoadingInitialPerfumes && displayPerfumes.length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-2">
+                        {perfumeSearch.trim() ? 'No perfumes found' : 'No perfumes available'}
+                      </p>
                     )}
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
