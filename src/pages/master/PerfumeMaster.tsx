@@ -688,7 +688,7 @@ export default function PerfumeMaster() {
               <Upload className="w-3.5 h-3.5" /> Bulk CSV Import
             </Button>
             <Button size="sm" className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5"
-              onClick={() => setShowAddForm(true)} disabled={isDataLoading}>
+              onClick={() => setShowAddForm(true)}>
               <Plus className="w-3.5 h-3.5" /> Add Perfume
             </Button>
           </div>

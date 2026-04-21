@@ -656,24 +656,40 @@ export const api = {
       delete: async (id: string) => apiDelete(`/notes/${id}`),
     },
     auras: async () => {
-      const res = await apiGet<any>('/taxonomies/auras');
-      const items = normalizeList(res);
-      return wrapList(items.map(mapAuraDefinition));
+      try {
+        const res = await apiGet<any>('/taxonomies/auras');
+        const items = normalizeList(res);
+        return wrapList(items.map(mapAuraDefinition));
+      } catch {
+        return wrapList([]);
+      }
     },
     families: async () => {
-      const res = await apiGet<any>('/taxonomies/families');
-      const items = normalizeList(res);
-      return wrapList(items.map(mapFamily));
+      try {
+        const res = await apiGet<any>('/taxonomies/families');
+        const items = normalizeList(res);
+        return wrapList(items.map(mapFamily));
+      } catch {
+        return wrapList([]);
+      }
     },
     subFamilies: async () => {
-      const res = await apiGet<any>('/taxonomies/sub-families');
-      const items = normalizeList(res);
-      return wrapList(items.map(mapSubFamily));
+      try {
+        const res = await apiGet<any>('/taxonomies/sub-families');
+        const items = normalizeList(res);
+        return wrapList(items.map(mapSubFamily));
+      } catch {
+        return wrapList([]);
+      }
     },
     colors: async () => {
-      const res = await apiGet<any>('/colors');
-      const items = normalizeList(res);
-      return wrapList(items.map(mapColorDefinition));
+      try {
+        const res = await apiGet<any>('/colors');
+        const items = normalizeList(res);
+        return wrapList(items.map(mapColorDefinition));
+      } catch {
+        return wrapList([]);
+      }
     },
     pricingRules: {
       surcharges: async () => {
@@ -764,9 +780,13 @@ export const api = {
       }
     },
     syringes: async () => {
-      const res = await apiGet<any>('/syringes');
-      const items = normalizeList(res);
-      return wrapList(items.map(mapSyringe));
+      try {
+        const res = await apiGet<any>('/syringes');
+        const items = normalizeList(res);
+        return wrapList(items.map(mapSyringe));
+      } catch {
+        return wrapList(mock.mockSyringes);
+      }
     },
     pricing: {
       list: async () => wrapList([]),
@@ -778,19 +798,27 @@ export const api = {
       },
     },
     filterTags: async (category?: string) => {
-      const res = await apiGet<any>('/taxonomies/filter-tags');
-      const items = normalizeList(res);
-      const filtered = category ? items.filter((tag: any) => tag.category === category) : items;
-      return wrapList(filtered);
+      try {
+        const res = await apiGet<any>('/taxonomies/filter-tags');
+        const items = normalizeList(res);
+        const filtered = category ? items.filter((tag: any) => tag.category === category) : items;
+        return wrapList(filtered);
+      } catch {
+        return wrapList([]);
+      }
     }
   },
 
   // Aliases for components expecting root-level access
   notes: {
     list: async () => {
-      const res = await apiGet<any>('/notes');
-      const items = normalizeList(res);
-      return wrapList(items);
+      try {
+        const res = await apiGet<any>('/notes');
+        const items = normalizeList(res);
+        return wrapList(items);
+      } catch {
+        return wrapList([]);
+      }
     },
     create: async (d: any) => apiPost('/notes', d),
     update: async (id: string, d: any) => apiPut(`/notes/${id}`, d),
