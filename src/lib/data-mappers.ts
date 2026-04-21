@@ -138,6 +138,8 @@ export function mapSyringe(row: any): Syringe {
 export function mapPackagingSku(row: any): PackagingSKU {
   return {
     sku_id: row.skuId,
+    barcode_value: row.barcodeValue ?? row.barcode_value ?? undefined,
+    barcode_image_url: row.barcodeImageUrl ?? row.barcode_image_url ?? undefined,
     name: row.name,
     category: row.category,
     size_spec: row.sizeSpec ?? '',

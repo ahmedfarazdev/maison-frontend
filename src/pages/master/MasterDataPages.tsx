@@ -66,11 +66,14 @@ import {
   Wind,
   X,
   Zap,
+  RefreshCw,
 } from 'lucide-react';
+import PropagationOverlay from '@/components/master/PropagationOverlay';
 import type {
   AlaCartePricingMultiplier,
   AuraColor,
   AuraDefinition,
+  ColorDefinition,
   Family,
   MlDiscount,
   PackagingSKU,
@@ -141,7 +144,7 @@ function InlineTextarea({ value, onChange, className, rows = 2 }: {
 
 // ---- Aura Definitions (Editable via Dialog) ----
 export function AuraDefinitions() {
-  const { aurasQuery, createAura, updateAura, deleteAura } = useTaxonomies();
+  const { aurasQuery, colorsQuery, createAura, updateAura, deleteAura } = useTaxonomies();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -150,6 +153,15 @@ export function AuraDefinitions() {
   const [editTargetId, setEditTargetId] = useState<string | null>(null);
 
   const allAuras = (aurasQuery.data as AuraDefinition[]) || [];
+  const allColors = (colorsQuery.data as ColorDefinition[]) || [];
+  const colorHexByName = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const color of allColors) {
+      map[color.name] = color.hex_code;
+    }
+    return map;
+  }, [allColors]);
+  const defaultColor = allColors[0] ?? { name: 'Red', hex_code: '#E53935' };
   const isLoading = aurasQuery.isLoading;
   const hasError = Boolean(aurasQuery.error);
   const isPending = createAura.isPending || updateAura.isPending || deleteAura.isPending;
@@ -160,7 +172,7 @@ export function AuraDefinitions() {
 
   const addAura = () => {
     setEditForm({
-      name: '', color: 'Red' as AuraColor, color_hex: '#E53935',
+      name: '', color: defaultColor.name as AuraColor, color_hex: defaultColor.hex_code,
       element: '', keywords: [], persona: '', tagline: '',
       description: '', core_drive: '', balance_aura: '',
     });
@@ -196,8 +208,8 @@ export function AuraDefinitions() {
     const payload = {
       aura_id: auraId,
       name: editForm.name || '',
-      color: editForm.color || 'Red',
-      color_hex: editForm.color_hex || '#888888',
+      color: editForm.color || defaultColor.name,
+      color_hex: editForm.color_hex || colorHexByName[editForm.color || ''] || defaultColor.hex_code,
       element: editForm.element || '',
       keywords: editForm.keywords || [],
       persona: editForm.persona || '',
@@ -407,12 +419,14 @@ export function AuraDefinitions() {
               </div>
               <div>
                 <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Color</label>
-                <select value={editForm.color || 'Red'}
-                  onChange={e => updateField('color', e.target.value)}
+                <select value={editForm.color || defaultColor.name}
+                  onChange={e => {
+                    const selectedName = e.target.value;
+                    updateField('color', selectedName);
+                    updateField('color_hex', colorHexByName[selectedName] || editForm.color_hex || defaultColor.hex_code);
+                  }}
                   className="w-full bg-background border border-input rounded-md px-2.5 py-1.5 text-sm">
-                  {(['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Pink', 'Violet'] as AuraColor[]).map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
+                  {allColors.map(c => <option key={c.id || c.name} value={c.name}>{c.name}</option>)}
                 </select>
               </div>
               <div>
@@ -528,6 +542,7 @@ export function FragranceFamilies() {
   const {
     familiesQuery,
     subFamiliesQuery,
+    colorsQuery,
     createFamily,
     updateFamily,
     deleteFamily,
@@ -556,6 +571,15 @@ export function FragranceFamilies() {
 
   const families = (familiesQuery.data as Family[]) || [];
   const subs = (subFamiliesQuery.data as SubFamily[]) || [];
+  const allColors = (colorsQuery.data as ColorDefinition[]) || [];
+  const colorHexByName = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const color of allColors) {
+      map[color.name] = color.hex_code;
+    }
+    return map;
+  }, [allColors]);
+  const defaultColor = allColors[0]?.name || 'Red';
 
   const isLoading = familiesQuery.isLoading || subFamiliesQuery.isLoading;
   const isSaving =
@@ -630,7 +654,7 @@ export function FragranceFamilies() {
     setSubForm({
       main_family_id: parentId, main_family_name: '',
       ff_code: '', name: '', scent_dna: '', ritual_name: '', ritual_occasions: '',
-      aura_name: '', aura_color: 'Red' as AuraColor, key_notes: [], mood_tags: [],
+      aura_name: '', aura_color: defaultColor as AuraColor, key_notes: [], mood_tags: [],
       description: '', scent_story: '',
     });
     setSubKeyNotesText('');
@@ -785,7 +809,7 @@ export function FragranceFamilies() {
                   <div className="divide-y divide-border/50">
                     {familySubs.map(sub => {
                       const subOpen = expandedSub === sub.sub_family_id;
-                      const auraHex = AURA_HEX[sub.aura_color] || '#888';
+                      const auraHex = colorHexByName[sub.aura_color] || AURA_HEX[sub.aura_color] || '#888';
 
                       return (
                         <div key={sub.sub_family_id}>
@@ -969,12 +993,10 @@ export function FragranceFamilies() {
             <div className="space-y-3">
               <div>
                 <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Aura Color</label>
-                <select value={subForm.aura_color || 'Red'}
+                <select value={subForm.aura_color || defaultColor}
                   onChange={e => setSubForm(p => ({ ...p, aura_color: e.target.value as AuraColor, aura_name: e.target.value }))}
                   className="w-full bg-background border border-input rounded-md px-2.5 py-1.5 text-sm">
-                  {(['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Pink', 'Violet'] as AuraColor[]).map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
+                  {allColors.map(c => <option key={c.id || c.name} value={c.name}>{c.name}</option>)}
                 </select>
               </div>
               <div>
@@ -1283,6 +1305,8 @@ export function PricingRules() {
   const [editingTable, setEditingTable] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showPropagation, setShowPropagation] = useState(false);
+  const [propagationTrigger, setPropagationTrigger] = useState('');
 
   // Load all pricing rules from DB on mount
   useEffect(() => {
@@ -1359,7 +1383,7 @@ export function PricingRules() {
         await api.mutations.pricing.saveSurcharges(
           surcharges.map((s, i) => ({
             fromPricePerMl: s.from_price_per_ml,
-            toPricePerMl: s.to_price_per_ml ?? null,
+            toPricePerMl: (s.to_price_per_ml === null || (s.to_price_per_ml as any) === '') ? null : s.to_price_per_ml,
             sCategory: s.s_category,
             sPrice: s.s_price,
             sortOrder: i,
@@ -1401,11 +1425,25 @@ export function PricingRules() {
       }
       setEditingTable(null);
       toast.success(`${name} saved to database`);
+
+      // Automatically trigger propagation overlay tracking
+      setPropagationTrigger(`${name} Update`);
+      setShowPropagation(true);
     } catch (e) {
       console.error('[Pricing] Save failed:', e);
       toast.error(`Failed to save ${name}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleManualPropagate = async () => {
+    try {
+      await api.subscriptionPricing.propagate();
+      setPropagationTrigger('Manual Recalculation');
+      setShowPropagation(true);
+    } catch {
+      toast.error('Failed to start recalculation');
     }
   };
 
@@ -1421,7 +1459,14 @@ export function PricingRules() {
     <div>
       <PageHeader title="Pricing Rules"
         subtitle="Manage surcharge tiers, 2ml pricing, hype multipliers, and discount factors"
-        breadcrumbs={[{ label: 'System Setup' }, { label: 'Pricing Rules' }]} />
+        breadcrumbs={[{ label: 'System Setup' }, { label: 'Pricing Rules' }]}
+        actions={
+          <Button onClick={handleManualPropagate} variant="outline" className="gap-2">
+            <RefreshCw className="w-4 h-4" />
+            Recalculate All Prices
+          </Button>
+        }
+      />
 
       <div className="p-6">
         {/* Tab Bar */}
@@ -1807,6 +1852,12 @@ export function PricingRules() {
 
         </div>
       </div>
+
+      <PropagationOverlay
+        open={showPropagation}
+        onClose={() => setShowPropagation(false)}
+        ruleName={propagationTrigger}
+      />
     </div>
   );
 }

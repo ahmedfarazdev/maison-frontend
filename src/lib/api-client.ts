@@ -1,11 +1,12 @@
 import type {
   ApiResponse, ApiListResponse, Perfume, PerfumeSearchResult, AuraDefinition, Family, SubFamily,
+  ColorDefinition,
   VaultLocation, Supplier, Syringe, PackagingSKU, SealedBottle, DecantBottle,
   PackagingStock, Order, Job, SubscriptionCycle, PrintJob, DashboardKPIs,
   InventoryAlert, CriticalPerfume,
   User, BottleLedgerEvent, DecantLedgerEvent, ActivityEvent,
   BatchDecantItem, PackagingPickItem, PipelineStage,
-  BrandInsights,
+  BrandInsights, OrderDefinition,
 } from '@/types';
 import * as mock from './mock-data';
 import {
@@ -298,6 +299,48 @@ function mapSubFamily(row: any): SubFamily {
   };
 }
 
+function mapColorDefinition(row: any): ColorDefinition {
+  return {
+    id: normalizeString(row?.id) || undefined,
+    name: normalizeString(row?.name),
+    hex_code: normalizeString(row?.hexCode ?? row?.hex_code, '#888888'),
+  };
+}
+
+function mapOrderDefinition(row: any): OrderDefinition {
+  return {
+    id: normalizeString(row?.id),
+    code: normalizeString(row?.code),
+    name: normalizeString(row?.name),
+    description: normalizeString(row?.description) || null,
+    iconToken: normalizeString(row?.iconToken ?? row?.icon_token) || null,
+    colorToken: normalizeString(row?.colorToken ?? row?.color_token) || null,
+    active: Boolean(row?.active),
+    createdAt: normalizeString(row?.createdAt ?? row?.created_at),
+    updatedAt: normalizeString(row?.updatedAt ?? row?.updated_at),
+    statuses: normalizeList<any>(row?.statuses).map((status: any) => ({
+      id: normalizeString(status?.id),
+      statusCode: normalizeString(status?.statusCode ?? status?.status_code),
+      label: normalizeString(status?.label),
+      colorToken: normalizeString(status?.colorToken ?? status?.color_token) || null,
+      position: Number(status?.position ?? 0),
+      isTerminal: Boolean(status?.isTerminal ?? status?.is_terminal),
+      active: Boolean(status?.active ?? true),
+      createdAt: normalizeString(status?.createdAt ?? status?.created_at),
+      updatedAt: normalizeString(status?.updatedAt ?? status?.updated_at),
+    })),
+    transitions: normalizeList<any>(row?.transitions).map((transition: any) => ({
+      id: normalizeString(transition?.id),
+      fromStatusCode: normalizeString(transition?.fromStatusCode ?? transition?.from_status_code),
+      toStatusCode: normalizeString(transition?.toStatusCode ?? transition?.to_status_code),
+      condition: normalizeString(transition?.condition) || null,
+      active: Boolean(transition?.active ?? true),
+      createdAt: normalizeString(transition?.createdAt ?? transition?.created_at),
+      updatedAt: normalizeString(transition?.updatedAt ?? transition?.updated_at),
+    })),
+  };
+}
+
 const toAuraPayload = (input: any): Record<string, unknown> => {
   const payload: Record<string, unknown> = {};
   const auraId = input?.auraId ?? input?.aura_id;
@@ -434,6 +477,14 @@ const toSupplierPayload = (input: any, options?: { ensureSupplierId?: boolean })
   const totalItems = input?.totalItems ?? input?.total_items;
   if (totalItems !== undefined) payload.totalItems = totalItems === null ? null : Number(totalItems);
 
+  return payload;
+};
+
+const toColorPayload = (input: any): Record<string, unknown> => {
+  const payload: Record<string, unknown> = {};
+  if (input?.name !== undefined) payload.name = input.name;
+  const hexCode = input?.hexCode ?? input?.hex_code;
+  if (hexCode !== undefined) payload.hexCode = hexCode;
   return payload;
 };
 
@@ -618,6 +669,11 @@ export const api = {
       const res = await apiGet<any>('/taxonomies/sub-families');
       const items = normalizeList(res);
       return wrapList(items.map(mapSubFamily));
+    },
+    colors: async () => {
+      const res = await apiGet<any>('/colors');
+      const items = normalizeList(res);
+      return wrapList(items.map(mapColorDefinition));
     },
     pricingRules: {
       surcharges: async () => {
@@ -1000,8 +1056,17 @@ export const api = {
         return wrapList(mock.mockPerfumes);
       }
     },
-    search: async (query: string) => {
-      const res = await apiGet<PerfumeSearchResult[]>(`/perfumes/search?query=${encodeURIComponent(query)}`);
+    search: async (query: string, options?: { limit?: number }) => {
+      const params = new URLSearchParams({ query });
+      if (options?.limit) params.set('limit', String(options.limit));
+      const res = await apiGet<PerfumeSearchResult[]>(`/perfumes/search?${params.toString()}`);
+      return Array.isArray(res) ? res : [];
+    },
+    suggestions: async (limit?: number) => {
+      const params = new URLSearchParams();
+      if (limit) params.set('limit', String(limit));
+      const suffix = params.toString();
+      const res = await apiGet<PerfumeSearchResult[]>(`/perfumes/suggestions${suffix ? `?${suffix}` : ''}`);
       return Array.isArray(res) ? res : [];
     },
     get: async (id: string) => {
@@ -1277,10 +1342,12 @@ export const api = {
       const res = await apiGet<any>('/subscription-pricing');
       return wrapOne(res);
     },
-    update: async (payload: any) => {
-      const res = await apiPut<any>('/subscription-pricing', payload);
+    update: async (data: any) => {
+      const res = await apiPut<any>('/subscription-pricing', data);
       return wrapOne(res);
     },
+    propagate: () => apiPost<any>('/subscription-pricing/propagate', {}),
+    getPropagationStatus: () => apiGet<any>('/subscription-pricing/propagation-status'),
   },
   production: {
     stats: async () => wrapOne({}),
@@ -1292,6 +1359,17 @@ export const api = {
   // ---- Standard UI Patterns ----
   orders: {
     list: async () => wrapList([]),
+  },
+  orderDefinitions: {
+    list: async () => {
+      const res = await apiGet<any[]>('/admin/order-definitions');
+      const items = normalizeList<any>(res).map(mapOrderDefinition);
+      return wrapOne(items);
+    },
+    get: async (id: string) => {
+      const res = await apiGet<any>(`/admin/order-definitions/${encodeURIComponent(id)}`);
+      return wrapOne(mapOrderDefinition(res));
+    },
   },
   jobs: {
     list: async () => wrapList([]),
@@ -1439,6 +1517,20 @@ export const api = {
         return wrapList(res.map(mapBrand));
       },
     },
+    colors: {
+      create: async (d: any) => {
+        const res = await apiPost<any>('/colors', toColorPayload(d));
+        return wrapOne(mapColorDefinition(res));
+      },
+      update: async (id: string, d: any) => {
+        const res = await apiPatch<any>(`/colors/${encodeURIComponent(id)}`, toColorPayload(d));
+        return wrapOne(mapColorDefinition(res));
+      },
+      delete: async (id: string) => {
+        await apiDelete(`/colors/${encodeURIComponent(id)}`);
+        return wrapOne({ id });
+      },
+    },
     reconciliation: {
       createSession: async (d: any) => apiPost<any>('/inventory/reconciliation', d),
       listSessions: async () => wrapList([]),
@@ -1454,6 +1546,21 @@ export const api = {
       addTracking: (id: string, tracking: string) => apiPost(`/orders/${id}/tracking`, { tracking }),
       addAttachment: (id: string, d: any) => apiPost(`/orders/${id}/attachments`, d),
       deleteAttachment: (id: string, attrId: string) => apiDelete(`/orders/${id}/attachments/${attrId}`),
+    },
+    orderDefinitions: {
+      create: async (d: any) => {
+        const res = await apiPost<any>('/admin/order-definitions', d);
+        return wrapOne(mapOrderDefinition(res));
+      },
+      update: async (id: string, d: any) => {
+        const res = await apiPatch<any>(`/admin/order-definitions/${encodeURIComponent(id)}`, d);
+        return wrapOne(mapOrderDefinition(res));
+      },
+      updateWorkflow: async (id: string, d: any) => {
+        const res = await apiPut<any>(`/admin/order-definitions/${encodeURIComponent(id)}/workflow`, d);
+        return wrapOne(mapOrderDefinition(res));
+      },
+      delete: (id: string) => apiDelete(`/admin/order-definitions/${encodeURIComponent(id)}`),
     },
     bottles: {
       create: (d: any) => apiPost('/inventory/bottles', d),
@@ -1498,6 +1605,17 @@ export const api = {
       save2mlTiers: (items: any[]) => apiPost('/pricing-rules/two-ml-tiers', items),
     },
     taxonomies: {
+      colors: {
+        create: async (d: any) => {
+          const res = await apiPost<any>('/colors', toColorPayload(d));
+          return mapColorDefinition(res);
+        },
+        update: async (id: string, d: any) => {
+          const res = await apiPatch<any>(`/colors/${id}`, toColorPayload(d));
+          return mapColorDefinition(res);
+        },
+        delete: (id: string) => apiDelete(`/colors/${id}`),
+      },
       auras: {
         create: async (d: any) => {
           const res = await apiPost<any>('/taxonomies/auras', toAuraPayload(d));

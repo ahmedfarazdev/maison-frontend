@@ -19,6 +19,7 @@ import {
   Puzzle, BarChart2, Briefcase, CalendarDays, Gem, Lock, Gift,
   CreditCard, Building, Timer, Library, Wrench, UserCheck, Zap, Key, RefreshCw, Wind, PackageCheck,
   Kanban, GanttChart, UserCog, Boxes, CircleDot, Cog, Activity, History,
+  Palette,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -287,6 +288,7 @@ const navItems: NavItem[] = [
     children: [
       { label: 'Order Definitions', path: '/system-setup/order-definitions', icon: ClipboardList },
       { label: 'Aura Definitions', path: '/master/auras', icon: CircleDot },
+      { label: 'Colors', path: '/master/colors', icon: Palette },
       { label: 'Fragrance Families', path: '/master/families', icon: Tag },
       { label: 'Filters & Tags', path: '/master/filters', icon: Shield },
       { label: 'Pricing Rules', path: '/master/pricing', icon: DollarSign },

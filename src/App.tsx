@@ -39,6 +39,7 @@ const StockReconciliation = lazy(() => import("./pages/inventory/StockReconcilia
 const PerfumeMaster = lazy(() => import("./pages/master/PerfumeMaster"));
 const BrandsPage = lazy(() => import("./pages/master/BrandsPage"));
 const AuraDefinitions = lazy(() => import("./pages/master/MasterDataPages").then(m => ({ default: m.AuraDefinitions })));
+const ColorsPage = lazy(() => import("./pages/master/ColorsPage"));
 const FragranceFamilies = lazy(() => import("./pages/master/MasterDataPages").then(m => ({ default: m.FragranceFamilies })));
 const FiltersAndTags = lazy(() => import("./pages/master/MasterDataPages").then(m => ({ default: m.FiltersAndTags })));
 const PricingRules = lazy(() => import("./pages/master/MasterDataPages").then(m => ({ default: m.PricingRules })));
@@ -273,6 +274,7 @@ function Router() {
           <Route path="/master/perfumes">{() => <ProtectedRoute requiredPermission="master_data.read"><AppLayout><PerfumeMaster /></AppLayout></ProtectedRoute>}</Route>
           <Route path="/master/brands">{() => <ProtectedRoute requiredPermission="master_data.read"><AppLayout><BrandsPage /></AppLayout></ProtectedRoute>}</Route>
           <Route path="/master/auras">{() => <AppLayout><AuraDefinitions /></AppLayout>}</Route>
+          <Route path="/master/colors">{() => <AppLayout><ColorsPage /></AppLayout>}</Route>
           <Route path="/master/families">{() => <AppLayout><FragranceFamilies /></AppLayout>}</Route>
           <Route path="/master/filters">{() => <AppLayout><FiltersAndTags /></AppLayout>}</Route>
           <Route path="/master/pricing">{() => <AppLayout><PricingRules /></AppLayout>}</Route>

@@ -9,6 +9,7 @@ import { PageHeader, StatusBadge } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useSyringes } from '@/hooks/useSyringes';
+import { usePerfumeTypeahead } from '@/hooks/usePerfumeTypeahead';
 import { api } from '@/lib/api-client';
 import type { Syringe, SyringeStatus, SyringeSize, PerfumeSearchResult } from '@/types';
 import { toast } from 'sonner';
@@ -94,14 +95,17 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
   });
   const [customMl, setCustomMl] = useState<string>(syringe?.custom_size_ml?.toString() || '');
   const [perfumeSearch, setPerfumeSearch] = useState('');
-  const [searchResults, setSearchResults] = useState<PerfumeSearchResult[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
   const [isLoadingPerfume, setIsLoadingPerfume] = useState(!!syringe?.assigned_master_id);
   const [selectedPerfume, setSelectedPerfume] = useState<PerfumeSearchResult | null>(null);
-  const [initialPerfumes, setInitialPerfumes] = useState<PerfumeSearchResult[]>([]);
-  const [isLoadingInitialPerfumes, setIsLoadingInitialPerfumes] = useState(false);
   const [showPerfumeDropdown, setShowPerfumeDropdown] = useState(false);
   const perfumeDropdownRef = useRef<HTMLDivElement>(null);
+  const {
+    suggestions,
+    searchResults,
+    isLoadingSuggestions,
+    isSearching,
+    prefetchSuggestions,
+  } = usePerfumeTypeahead(perfumeSearch, { active: showPerfumeDropdown, minChars: 3, limit: 8 });
 
   const formatPerfumeLabel = (perfume: PerfumeSearchResult) => {
     if (perfume.brand && perfume.name) return `${perfume.brand} — ${perfume.name}`;
@@ -121,7 +125,7 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
 
     const loadAssignedPerfume = async () => {
       try {
-        const results = await api.perfumes.search(masterId);
+        const results = await api.perfumes.search(masterId, { limit: 5 });
         if (cancelled) return;
         const match = results.find((p) => p.master_id === masterId) || results[0];
         if (match) {
@@ -155,69 +159,16 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
     };
   }, [syringe?.assigned_master_id, syringe?.dedicated_perfume_name]);
 
-  useEffect(() => {
-    if (!perfumeSearch.trim()) {
-      setSearchResults([]);
-      return;
-    }
+  const perfumeQuery = perfumeSearch.trim();
+  const showSearchResults = perfumeQuery.length >= 3;
 
-    let cancelled = false;
-    const handler = setTimeout(async () => {
-      setIsSearching(true);
-      try {
-        const results = await api.perfumes.search(perfumeSearch);
-        if (!cancelled) setSearchResults(results);
-      } catch {
-        if (!cancelled) setSearchResults([]);
-      } finally {
-        if (!cancelled) setIsSearching(false);
-      }
-    }, 300);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(handler);
-    };
-  }, [perfumeSearch]);
-
-  // Always show all perfumes matching the search so users know the search works,
+  // Always show perfumes matching the search so users know the search works,
   // but they will be grayed out if already assigned to a different syringe.
   const availablePerfumes = useMemo(() => {
-    return searchResults;
-  }, [searchResults]);
+    return showSearchResults ? searchResults : suggestions;
+  }, [searchResults, suggestions, showSearchResults]);
 
   const filteredPerfumes = availablePerfumes.slice(0, 8);
-  const displayPerfumes = perfumeSearch.trim() ? filteredPerfumes : initialPerfumes.slice(0, 8);
-
-  useEffect(() => {
-    if (!showPerfumeDropdown || initialPerfumes.length > 0 || isLoadingInitialPerfumes) return;
-
-    let cancelled = false;
-    setIsLoadingInitialPerfumes(true);
-
-    api.perfumes.list()
-      .then((res: any) => {
-        if (cancelled) return;
-        const items = Array.isArray(res) ? res : res?.data || [];
-        const mapped = items.map((p: any) => ({
-          id: p.id || p.master_id,
-          master_id: p.master_id,
-          name: p.name || '',
-          brand: p.brand || '',
-        }));
-        setInitialPerfumes(mapped);
-      })
-      .catch(() => {
-        if (!cancelled) setInitialPerfumes([]);
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoadingInitialPerfumes(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [showPerfumeDropdown, initialPerfumes.length, isLoadingInitialPerfumes]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -323,18 +274,21 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
                   <Input
                     value={perfumeSearch}
                     onChange={e => { setPerfumeSearch(e.target.value); setShowPerfumeDropdown(true); }}
-                    onFocus={() => setShowPerfumeDropdown(true)}
+                    onFocus={() => {
+                      setShowPerfumeDropdown(true);
+                      prefetchSuggestions();
+                    }}
                     placeholder="Search perfume to assign..."
                     className="pl-9"
                   />
                   {showPerfumeDropdown && (
                     <div className="absolute z-20 top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto space-y-1 border border-border rounded-lg p-1 bg-card shadow-lg">
-                    {(perfumeSearch.trim() ? isSearching : isLoadingInitialPerfumes) && (
+                    {(showSearchResults ? isSearching : isLoadingSuggestions) && (
                       <div className="text-center py-2">
                         <Loader2 className="w-4 h-4 animate-spin inline-block" />
                       </div>
                     )}
-                    {!isSearching && !isLoadingInitialPerfumes && displayPerfumes.map(p => {
+                    {!isSearching && !isLoadingSuggestions && filteredPerfumes.map(p => {
                       const isAssigned = existingAssignments.has(p.master_id) && syringe?.assigned_master_id !== p.master_id;
                       return (
                         <button key={p.master_id} onClick={() => { setSelectedPerfume(p); setPerfumeSearch(''); setShowPerfumeDropdown(false); }}
@@ -347,9 +301,9 @@ function SyringeFormDialog({ syringe, nextSeq, existingAssignments, isPending, o
                         </button>
                       );
                     })}
-                    {!isSearching && !isLoadingInitialPerfumes && displayPerfumes.length === 0 && (
+                    {!isSearching && !isLoadingSuggestions && filteredPerfumes.length === 0 && (
                       <p className="text-xs text-muted-foreground text-center py-2">
-                        {perfumeSearch.trim() ? 'No perfumes found' : 'No perfumes available'}
+                        {showSearchResults ? 'No perfumes found' : 'No perfumes available'}
                       </p>
                     )}
                     </div>

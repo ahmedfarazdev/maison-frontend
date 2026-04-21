@@ -39,7 +39,7 @@ export interface AuthState {
 
 // ---- Master Data ----
 export type Concentration = 'Extrait de Parfum' | 'Eau de Parfum' | 'Parfum' | 'Eau de Toilette' | 'Cologne';
-export type AuraColor = 'Red' | 'Blue' | 'Violet' | 'Green' | 'Yellow' | 'Orange' | 'Pink';
+export type AuraColor = string;
 export type HypeLevel = 'Extreme' | 'High' | 'Medium' | 'Low' | 'Rare' | 'Discontinued';
 export type ScentType = 'Fresh' | 'Light' | 'Powdery' | 'Strong' | 'Sweet' | 'Warm';
 export type Season = 'All Year Round' | 'Fall' | 'Spring' | 'Summer' | 'Winter';
@@ -146,6 +146,12 @@ export interface AuraDefinition {
   core_drive: string;
   balance_aura: string;
   color_hex: string;
+}
+
+export interface ColorDefinition {
+  id?: string;
+  name: string;
+  hex_code: string;
 }
 
 export interface Family {
@@ -363,6 +369,8 @@ export const PACKAGING_CATEGORY_CODES: Record<PackagingCategory, string> = {
 
 export interface PackagingSKU {
   sku_id: string;           // auto-generated: EM/{CAT_CODE}/{ITEM_ABBREV}-{SPEC}-{COLOR_CODE}
+  barcode_value?: string;
+  barcode_image_url?: string;
   name: string;
   category: PackagingCategory;
   size_spec: string;        // e.g., '8ml', '5ml', 'Straight7*7*20cm'
@@ -534,6 +542,42 @@ export interface Order {
   notes?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface OrderDefinitionStatus {
+  id: string;
+  statusCode: string;
+  label: string;
+  colorToken: string | null;
+  position: number;
+  isTerminal: boolean;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderDefinitionTransition {
+  id: string;
+  fromStatusCode: string;
+  toStatusCode: string;
+  condition: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderDefinition {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  iconToken: string | null;
+  colorToken: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  statuses: OrderDefinitionStatus[];
+  transitions: OrderDefinitionTransition[];
 }
 
 export type JobStatus =

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { mockPerfumes } from '@/lib/mock-data';
 import { useLocations } from '@/hooks/useLocations';
+import { usePerfumeTypeahead } from '@/hooks/usePerfumeTypeahead';
 import { api } from '@/lib/api-client';
 import type { VaultLocation, LocationType, PerfumeSearchResult } from '@/types';
 import { toast } from 'sonner';
@@ -342,79 +343,32 @@ function AssignPerfumeDialog({ location, onAssign, onClear, onDelete, isAssignin
   onClose: () => void;
 }) {
   const [search, setSearch] = useState('');
-  const [searchResults, setSearchResults] = useState<SearchablePerfume[]>([]);
-  const [loading, setLoading] = useState(false);
   const [selectedPerfume, setSelectedPerfume] = useState<SearchablePerfume | null>(null);
-  const [initialPerfumes, setInitialPerfumes] = useState<SearchablePerfume[]>([]);
-  const [loadingInitialPerfumes, setLoadingInitialPerfumes] = useState(false);
   const [showPerfumeDropdown, setShowPerfumeDropdown] = useState(false);
   const perfumeDropdownRef = useRef<HTMLDivElement>(null);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const {
+    suggestions,
+    searchResults,
+    isLoadingSuggestions,
+    isSearching,
+    prefetchSuggestions,
+  } = usePerfumeTypeahead(search, { active: showPerfumeDropdown, minChars: 3, limit: 20 });
 
-  // Search for perfumes
-  useEffect(() => {
-    if (!search.trim()) {
-      setSearchResults([]);
-      return;
-    }
-
-    const handler = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const results = await api.perfumes.search(search);
-        const mapped = results.map((perfume) => ({
-          ...perfume,
-          _name: `${perfume.brand} — ${perfume.name}`,
-        }));
-        setSearchResults(mapped);
-      } catch (error) {
-        console.error('Failed to search perfumes:', error);
-        toast.error('Failed to search for perfumes.');
-      } finally {
-        setLoading(false);
-      }
-    }, 300);
-
-    return () => clearTimeout(handler);
-  }, [search]);
-
-  useEffect(() => {
-    if (!showPerfumeDropdown || initialPerfumes.length > 0 || loadingInitialPerfumes) return;
-
-    let cancelled = false;
-    setLoadingInitialPerfumes(true);
-
-    api.perfumes.list()
-      .then((res: any) => {
-        if (cancelled) return;
-        const items = Array.isArray(res) ? res : res?.data || [];
-        const mapped = items.map((perfume: any) => ({
-          id: perfume.id || perfume.master_id,
-          master_id: perfume.master_id,
-          name: perfume.name || '',
-          brand: perfume.brand || '',
-          _name: perfume.brand && perfume.name
-            ? `${perfume.brand} — ${perfume.name}`
-            : perfume.name || perfume.master_id,
-        }));
-        setInitialPerfumes(mapped);
-      })
-      .catch(() => {
-        if (!cancelled) setInitialPerfumes([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingInitialPerfumes(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [showPerfumeDropdown, initialPerfumes.length, loadingInitialPerfumes]);
-
-  const basePerfumes = search.trim() ? searchResults : initialPerfumes;
-  const filtered = filterPerfumeSearchResults(basePerfumes, search, 20);
-  const isLoadingResults = search.trim() ? loading : loadingInitialPerfumes;
+  const searchQuery = search.trim();
+  const showSearchResults = searchQuery.length >= 3;
+  const basePerfumes = useMemo(() => {
+    const source = showSearchResults ? searchResults : suggestions;
+    return source.map((perfume) => ({
+      ...perfume,
+      _name: perfume.brand && perfume.name
+        ? `${perfume.brand} — ${perfume.name}`
+        : perfume.name || perfume.master_id,
+    }));
+  }, [searchResults, showSearchResults, suggestions]);
+  const filtered = filterPerfumeSearchResults(basePerfumes, searchQuery, 20);
+  const isLoadingResults = showSearchResults ? isSearching : isLoadingSuggestions;
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -525,9 +479,12 @@ function AssignPerfumeDialog({ location, onAssign, onClear, onDelete, isAssignin
                   <Input
                     value={search}
                     onChange={e => { setSearch(e.target.value); setShowPerfumeDropdown(true); }}
-                    onFocus={() => setShowPerfumeDropdown(true)}
+                    onFocus={() => {
+                      setShowPerfumeDropdown(true);
+                      prefetchSuggestions();
+                    }}
                     placeholder="Search by perfume name, brand, or Master ID..."
-                    className="pl-9"
+                    className="pl-9 h-14"
                     autoFocus
                   />
                   {showPerfumeDropdown && (
@@ -570,7 +527,7 @@ function AssignPerfumeDialog({ location, onAssign, onClear, onDelete, isAssignin
                   </p>
                 </div>
               )}
-              {!search && !selectedPerfume && !loading && (
+              {!search && !selectedPerfume && !isLoadingResults && (
                 <div className="text-center py-6">
                   <Scan className="w-8 h-8 text-muted-foreground/20 mx-auto mb-2" />
                   <p className="text-xs text-muted-foreground">Search for a perfume in master data</p>
@@ -667,85 +624,37 @@ function AddBottleToLocationDialog({
 }) {
   const [step, setStep] = useState<AddBottleStep>('bottle');
 
-  const [loading, setLoading] = useState(false);
-
   // Step 1: Perfume selection
   const [perfumeSearch, setPerfumeSearch] = useState('');
-  const [searchResults, setSearchResults] = useState<SearchablePerfume[]>([]);
   const [selectedPerfume, setSelectedPerfume] = useState<SearchablePerfume | null>(null);
-  const [initialPerfumes, setInitialPerfumes] = useState<SearchablePerfume[]>([]);
-  const [loadingInitialPerfumes, setLoadingInitialPerfumes] = useState(false);
   const [showPerfumeDropdown, setShowPerfumeDropdown] = useState(false);
   const perfumeDropdownRef = useRef<HTMLDivElement>(null);
+  const {
+    suggestions,
+    searchResults,
+    isLoadingSuggestions,
+    isSearching,
+    prefetchSuggestions,
+  } = usePerfumeTypeahead(perfumeSearch, { active: showPerfumeDropdown, minChars: 3, limit: 20 });
 
   // Step 2: Location selection
   const [locationFilter, setLocationFilter] = useState<LocationType>('sealed');
   const [selectedLocation, setSelectedLocation] = useState<VaultLocation | null>(null);
   const [locationOverride, setLocationOverride] = useState(false);
 
-  // Search perfumes
-  useEffect(() => {
-    if (!perfumeSearch.trim()) {
-      setSearchResults([]);
-      return;
-    }
-
-    const handler = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const results = await api.perfumes.search(perfumeSearch);
-        const mapped = results.map((perfume) => ({
-          ...perfume,
-          _name: `${perfume.brand} — ${perfume.name}`,
-        }));
-        setSearchResults(mapped);
-      } catch (error) {
-        console.error('Failed to search perfumes:', error);
-        toast.error('Failed to search perfumes.');
-      } finally {
-        setLoading(false);
-      }
-    }, 300);
-
-    return () => clearTimeout(handler);
-  }, [perfumeSearch]);
-
-  useEffect(() => {
-    if (!showPerfumeDropdown || initialPerfumes.length > 0 || loadingInitialPerfumes) return;
-
-    let cancelled = false;
-    setLoadingInitialPerfumes(true);
-
-    api.perfumes.list()
-      .then((res: any) => {
-        if (cancelled) return;
-        const items = Array.isArray(res) ? res : res?.data || [];
-        const mapped = items.map((perfume: any) => ({
-          id: perfume.id || perfume.master_id,
-          master_id: perfume.master_id,
-          name: perfume.name || '',
-          brand: perfume.brand || '',
-          _name: perfume.brand && perfume.name
-            ? `${perfume.brand} — ${perfume.name}`
-            : perfume.name || perfume.master_id,
-        }));
-        setInitialPerfumes(mapped);
-      })
-      .catch(() => {
-        if (!cancelled) setInitialPerfumes([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingInitialPerfumes(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [showPerfumeDropdown, initialPerfumes.length, loadingInitialPerfumes]);
-
-  const basePerfumes = perfumeSearch.trim() ? searchResults : initialPerfumes;
-  const filteredPerfumes = filterPerfumeSearchResults(basePerfumes, perfumeSearch, 20);
-  const isLoadingResults = perfumeSearch.trim() ? loading : loadingInitialPerfumes;
+  const perfumeQuery = perfumeSearch.trim();
+  const showSearchResults = perfumeQuery.length >= 3;
+  const basePerfumes = useMemo(() => {
+    const source = showSearchResults ? searchResults : suggestions;
+    return source.map((perfume) => ({
+      ...perfume,
+      _name: perfume.brand && perfume.name
+        ? `${perfume.brand} — ${perfume.name}`
+        : perfume.name || perfume.master_id,
+    }));
+  }, [searchResults, showSearchResults, suggestions]);
+  const filteredPerfumes = filterPerfumeSearchResults(basePerfumes, perfumeQuery, 20);
+  const isLoadingResults = showSearchResults ? isSearching : isLoadingSuggestions;
 
   // Auto-select next available location
   const nextAvailableLocation = useMemo(() => {
@@ -790,7 +699,7 @@ function AddBottleToLocationDialog({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-2xl   flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-3">
@@ -826,7 +735,7 @@ function AddBottleToLocationDialog({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="p-6">
           {/* Step 1: Select Perfume */}
           {step === 'bottle' && (
             <div className="space-y-4">
@@ -837,9 +746,12 @@ function AddBottleToLocationDialog({
                 <div ref={perfumeDropdownRef} className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input value={perfumeSearch} onChange={e => { setPerfumeSearch(e.target.value); setShowPerfumeDropdown(true); }}
-                    onFocus={() => setShowPerfumeDropdown(true)}
+                    onFocus={() => {
+                      setShowPerfumeDropdown(true);
+                      prefetchSuggestions();
+                    }}
                     placeholder="Search by perfume name, brand, or Master ID..."
-                    className="pl-9 h-11" autoFocus />
+                    className="pl-9 h-14" autoFocus />
                   {showPerfumeDropdown && (
                     <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-xl max-h-64 overflow-y-auto">
                       {isLoadingResults ? (

@@ -18,7 +18,7 @@ import {
 import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import type { Perfume, AuraColor, Syringe, InventoryBottle, DecantBottle } from '@/types';
+import type { Perfume, AuraColor, ColorDefinition, Syringe, InventoryBottle, DecantBottle } from '@/types';
 import AddPerfumeForm, { type PerfumeImageSubmitOptions } from '@/components/master/AddPerfumeForm';
 import BulkCsvUpload, { type PerfumeBulkSyringeInput } from '@/components/master/BulkCsvUpload';
 import PricingCalculator from '@/components/master/PricingCalculator';
@@ -148,10 +148,22 @@ export default function PerfumeMaster() {
   // const { data: decantRes } = useApiQuery(() => api.inventory.decantBottles(), []);
   const { brands } = useBrands();
 
-  const { familiesQuery, subFamiliesQuery, aurasQuery } = useTaxonomies();
+  const { familiesQuery, subFamiliesQuery, aurasQuery, colorsQuery } = useTaxonomies();
   const { syringesQuery } = useSyringes();
 
-  const isDataLoading = familiesQuery.isLoading || subFamiliesQuery.isLoading || aurasQuery.isLoading || syringesQuery.isLoading;
+  const isDataLoading = familiesQuery.isLoading || subFamiliesQuery.isLoading || aurasQuery.isLoading || colorsQuery.isLoading || syringesQuery.isLoading;
+  const allColors = (colorsQuery.data as ColorDefinition[] | undefined) ?? [];
+  const colorHexByName = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const color of allColors) {
+      map[color.name] = color.hex_code;
+    }
+    return map;
+  }, [allColors]);
+  const getAuraHex = useCallback((colorName?: string) => {
+    if (!colorName) return '#888';
+    return colorHexByName[colorName] || AURA_HEX[colorName as AuraColor] || '#888';
+  }, [colorHexByName]);
 
   // We can keep search and local state here
   const [search, setSearch] = useState('');
@@ -702,13 +714,13 @@ export default function PerfumeMaster() {
               )}>
               All
             </button>
-            {(Object.keys(AURA_HEX) as AuraColor[]).map(color => (
+            {(allColors.map(c => c.name) as AuraColor[]).map(color => (
               <button key={color} onClick={() => setFilterAura(filterAura === color ? '' : color)}
                 className={cn(
                   'w-7 h-7 rounded-md border-2 transition-all flex items-center justify-center',
                   filterAura === color ? 'border-foreground scale-110' : 'border-transparent hover:border-border'
                 )}>
-                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: AURA_HEX[color] }} />
+                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: getAuraHex(color) }} />
               </button>
             ))}
           </div>
@@ -898,7 +910,7 @@ export default function PerfumeMaster() {
                     <div className="absolute top-2 right-2 flex items-center gap-1.5">
                       {p.aura_color && (
                         <div className="w-5 h-5 rounded-full border-2 border-white shadow-sm"
-                          style={{ backgroundColor: AURA_HEX[p.aura_color] }} />
+                          style={{ backgroundColor: getAuraHex(p.aura_color) }} />
                       )}
                       <StatusBadge variant={p.visibility === 'active' ? 'success' : p.visibility === 'draft' ? 'gold' : 'muted'}>
                         {p.visibility}
@@ -1048,7 +1060,7 @@ export default function PerfumeMaster() {
                       )}
                       {p.aura_color && (
                         <div className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full border border-card"
-                          style={{ backgroundColor: AURA_HEX[p.aura_color] }} />
+                          style={{ backgroundColor: getAuraHex(p.aura_color) }} />
                       )}
                     </div>
 
@@ -1159,7 +1171,7 @@ export default function PerfumeMaster() {
                 <div className="flex items-center gap-3">
                   {selected.aura_color && (
                     <div className="w-8 h-8 rounded-full border-2 border-border"
-                      style={{ backgroundColor: AURA_HEX[selected.aura_color] }} />
+                      style={{ backgroundColor: getAuraHex(selected.aura_color) }} />
                   )}
                   <div>
                     <p className="text-xs text-muted-foreground">{selected.brand}</p>
@@ -1403,6 +1415,7 @@ export default function PerfumeMaster() {
           families={familiesQuery.data || []}
           subFamilies={subFamiliesQuery.data || []}
           auras={aurasQuery.data || []}
+          colors={allColors}
           brands={brands}
         />
       )}
@@ -1416,6 +1429,7 @@ export default function PerfumeMaster() {
           families={familiesQuery.data || []}
           subFamilies={subFamiliesQuery.data || []}
           auras={aurasQuery.data || []}
+          colors={allColors}
           brands={brands}
           editPerfume={editTarget}
         />

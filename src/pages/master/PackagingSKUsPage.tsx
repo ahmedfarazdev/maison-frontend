@@ -20,7 +20,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { api } from '@/lib/api-client';
+import { ACCESS_TOKEN_KEY, API_BASE, api } from '@/lib/api-client';
 import type { PackagingSKU, PackagingCategory, Supplier } from '@/types';
 import { PACKAGING_CATEGORY_CODES } from '@/types';
 import { toast } from 'sonner';
@@ -29,7 +29,7 @@ import {
   Package, Plus, Search, Edit2, Check, X, Download, Upload,
   AlertTriangle, Layers, Tag, Palette,
   Box, Ruler, Hash, Archive, Trash2, Link2, Unlink,
-  Loader2, RefreshCw, FileSpreadsheet, ChevronDown, ChevronRight,
+  Loader2, RefreshCw, FileSpreadsheet, ChevronDown, ChevronRight, Printer,
 } from 'lucide-react';
 import GenericBulkImport, { ImportColumn } from '@/components/shared/GenericBulkImport';
 
@@ -82,14 +82,149 @@ function generateSkuId(category: PackagingCategory, name: string, sizeSpec: stri
 }
 
 // ---- CSV Export ----
-const CSV_HEADERS = ['SKU ID', 'Name', 'Category', 'Size/Spec', 'Color', 'Type', 'Unit', 'Min Stock', 'Active'];
+const EXPORT_CSV_HEADERS = [
+  'SKU ID',
+  'Barcode Value',
+  'Barcode Image URL',
+  'Name',
+  'Category',
+  'Size/Spec',
+  'Color',
+  'Type',
+  'Unit',
+  'Min Stock',
+  'Active',
+];
+
+const IMPORT_CSV_HEADERS = ['SKU ID', 'Name', 'Category', 'Size/Spec', 'Color', 'Type', 'Unit', 'Min Stock', 'Active'];
+
+function getPackagingBarcodeImageUrl(skuId: string): string {
+  const base = (API_BASE || '').replace(/\/$/, '');
+  return `${base}/packaging-skus/${encodeURIComponent(skuId)}/barcode.svg`;
+}
+
+async function fetchPackagingBarcodeDataUri(skuId: string): Promise<string> {
+  const token = localStorage.getItem(ACCESS_TOKEN_KEY);
+  const response = await fetch(getPackagingBarcodeImageUrl(skuId), {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load barcode for ${skuId}`);
+  }
+
+  const svg = await response.text();
+  return `data:image/svg+xml;base64,${window.btoa(svg)}`;
+}
+
+function openBarcodePrintWindow(title: string, labelsHtml: string): void {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    throw new Error('Pop-up blocked');
+  }
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>${title}</title>
+        <style>
+          @page {
+            size: A4;
+            margin: 10mm;
+          }
+
+          html, body {
+            margin: 0;
+            padding: 0;
+          }
+
+          body {
+            font-family: 'Courier New', monospace;
+            color: #111;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          .page {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8mm;
+            align-content: start;
+          }
+
+          .label {
+            border: 1px solid #111;
+            border-radius: 3mm;
+            padding: 6mm;
+            min-height: 64mm;
+            box-sizing: border-box;
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+
+          .sku {
+            font-size: 11pt;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 2mm;
+          }
+
+          .name {
+            font-size: 8.5pt;
+            text-align: center;
+            margin-bottom: 3mm;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+
+          .qr-wrap {
+            display: flex;
+            justify-content: center;
+            margin: 2mm 0;
+          }
+
+          .qr {
+            width: 28mm;
+            height: 28mm;
+          }
+
+          .barcode {
+            font-size: 8pt;
+            text-align: center;
+            letter-spacing: 0.25mm;
+            margin-top: 2mm;
+            word-break: break-all;
+          }
+        </style>
+      </head>
+      <body onload="window.print()">
+        <div class="page">${labelsHtml}</div>
+      </body>
+    </html>
+  `;
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+}
 
 function exportPackagingCsv(skus: PackagingSKU[]) {
   const rows = skus.map(s => [
-    s.sku_id, s.name, s.category, s.size_spec, s.color_variant, s.type,
-    s.unit, String(s.min_stock_level), s.active ? 'Yes' : 'No',
+    s.sku_id,
+    s.barcode_value || s.sku_id,
+    s.barcode_image_url || getPackagingBarcodeImageUrl(s.sku_id),
+    s.name,
+    s.category,
+    s.size_spec,
+    s.color_variant,
+    s.type,
+    s.unit,
+    String(s.min_stock_level),
+    s.active ? 'Yes' : 'No',
   ]);
-  const csv = [CSV_HEADERS.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n');
+  const csv = [EXPORT_CSV_HEADERS.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
@@ -100,7 +235,7 @@ function exportPackagingCsv(skus: PackagingSKU[]) {
 }
 
 function downloadCsvTemplate() {
-  const csv = CSV_HEADERS.join(',') + '\n' +
+  const csv = IMPORT_CSV_HEADERS.join(',') + '\n' +
     '"EM/ATM/EXAMPLE-8ML-BLK","Diamond Atomiser","Atomiser & Vials","8ml","Black","atomizer","pc","50","Yes"';
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
@@ -431,6 +566,8 @@ export default function PackagingSKUsPage() {
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [deleteConfirmSku, setDeleteConfirmSku] = useState<string | null>(null);
   const [isDeletingSku, setIsDeletingSku] = useState(false);
+  const [printingSkuId, setPrintingSkuId] = useState<string | null>(null);
+  const [printingCategory, setPrintingCategory] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     return skus.filter(s => {
@@ -523,6 +660,50 @@ export default function PackagingSKUsPage() {
     setLinkedSupplierIds(prev => prev.filter(id => id !== supplierId));
     toast.success('Supplier unlinked');
   }, [linkingSku]);
+
+  const handlePrintSkuBarcode = useCallback(async (sku: PackagingSKU) => {
+    setPrintingSkuId(sku.sku_id);
+    try {
+      const qrDataUri = await fetchPackagingBarcodeDataUri(sku.sku_id);
+      const labelHtml = `
+        <div class="label">
+          <div class="sku">${sku.sku_id}</div>
+          <div class="name">${sku.name}</div>
+          <div class="qr-wrap"><img class="qr" src="${qrDataUri}" alt="${sku.sku_id} QR" /></div>
+          <div class="barcode">${sku.barcode_value || sku.sku_id}</div>
+        </div>
+      `;
+      openBarcodePrintWindow(`Packaging Barcode - ${sku.sku_id}`, labelHtml);
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to print barcode');
+    } finally {
+      setPrintingSkuId(null);
+    }
+  }, []);
+
+  const handlePrintCategoryBarcodes = useCallback(async (category: string, items: PackagingSKU[]) => {
+    setPrintingCategory(category);
+    try {
+      const labels = await Promise.all(items.map(async (sku) => {
+        const qrDataUri = await fetchPackagingBarcodeDataUri(sku.sku_id);
+        return `
+          <div class="label">
+            <div class="sku">${sku.sku_id}</div>
+            <div class="name">${sku.name}</div>
+            <div class="qr-wrap"><img class="qr" src="${qrDataUri}" alt="${sku.sku_id} QR" /></div>
+            <div class="barcode">${sku.barcode_value || sku.sku_id}</div>
+          </div>
+        `;
+      }));
+
+      openBarcodePrintWindow(`Packaging Barcodes - ${category}`, labels.join(''));
+      toast.success(`Prepared ${items.length} barcode labels for print`);
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to print section barcodes');
+    } finally {
+      setPrintingCategory(null);
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -657,6 +838,16 @@ export default function PackagingSKUsPage() {
                   <h3 className="text-sm font-bold">{category}</h3>
                   <p className="text-[10px] text-muted-foreground">{items.length} SKUs · {PACKAGING_CATEGORY_CODES[category as PackagingCategory]} code</p>
                 </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-xs"
+                  onClick={() => void handlePrintCategoryBarcodes(category, items)}
+                  disabled={printingCategory === category}
+                >
+                  {printingCategory === category ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                  Print Section
+                </Button>
                 <span className="text-xs font-mono text-muted-foreground">
                   {items.length} items
                 </span>
@@ -710,6 +901,14 @@ export default function PackagingSKUsPage() {
                               <button onClick={() => handleOpenLinkDialog(s)}
                                 className="text-muted-foreground hover:text-blue-500 transition-colors p-1" title="Link suppliers">
                                 <Link2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => void handlePrintSkuBarcode(s)}
+                                className="text-muted-foreground hover:text-emerald-500 transition-colors p-1"
+                                title="Print barcode"
+                                disabled={printingSkuId === s.sku_id}
+                              >
+                                {printingSkuId === s.sku_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
                               </button>
                               <button onClick={() => { setEditingSku(s); setShowForm(true); }}
                                 className="text-muted-foreground hover:text-gold transition-colors p-1" title="Edit">
