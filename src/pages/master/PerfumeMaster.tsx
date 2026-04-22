@@ -18,7 +18,7 @@ import {
 import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import type { Perfume, AuraColor, ColorDefinition, Syringe, InventoryBottle, DecantBottle } from '@/types';
+import type { Perfume, AuraColor, Syringe, InventoryBottle, DecantBottle } from '@/types';
 import AddPerfumeForm, { type PerfumeImageSubmitOptions } from '@/components/master/AddPerfumeForm';
 import BulkCsvUpload, { type PerfumeBulkSyringeInput } from '@/components/master/BulkCsvUpload';
 import PricingCalculator from '@/components/master/PricingCalculator';
@@ -31,6 +31,8 @@ const AURA_HEX: Record<AuraColor, string> = {
   Red: '#C41E3A', Blue: '#1B6B93', Violet: '#4A0E4E',
   Green: '#2D6A4F', Yellow: '#D4A017', Orange: '#E07C24', Pink: '#D63384',
 };
+
+const DEFAULT_AURA_COLORS: AuraColor[] = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Pink', 'Violet'];
 
 const HYPE_BADGE_COLORS: Record<string, string> = {
   Extreme: 'bg-red-600 text-white',
@@ -148,22 +150,25 @@ export default function PerfumeMaster() {
   // const { data: decantRes } = useApiQuery(() => api.inventory.decantBottles(), []);
   const { brands } = useBrands();
 
-  const { familiesQuery, subFamiliesQuery, aurasQuery, colorsQuery } = useTaxonomies();
+  const { familiesQuery, subFamiliesQuery, aurasQuery, filterTagsQuery } = useTaxonomies();
   const { syringesQuery } = useSyringes();
 
-  const isDataLoading = familiesQuery.isLoading || subFamiliesQuery.isLoading || aurasQuery.isLoading || colorsQuery.isLoading || syringesQuery.isLoading;
-  const allColors = (colorsQuery.data as ColorDefinition[] | undefined) ?? [];
-  const colorHexByName = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const color of allColors) {
-      map[color.name] = color.hex_code;
-    }
-    return map;
-  }, [allColors]);
+  const isDataLoading = familiesQuery.isLoading || subFamiliesQuery.isLoading || aurasQuery.isLoading || filterTagsQuery.isLoading || syringesQuery.isLoading;
+  const auraColors = useMemo<AuraColor[]>(() => {
+    const tags = (filterTagsQuery.data as Array<{ category: string; value: string }> | undefined) ?? [];
+    const options = tags
+      .filter((tag) => tag.category === 'aura_colors')
+      .map((tag) => tag.value?.trim())
+      .filter((value): value is string => Boolean(value));
+
+    const unique = Array.from(new Set(options));
+    return unique.length > 0 ? unique : DEFAULT_AURA_COLORS;
+  }, [filterTagsQuery.data]);
+
   const getAuraHex = useCallback((colorName?: string) => {
     if (!colorName) return '#888';
-    return colorHexByName[colorName] || AURA_HEX[colorName as AuraColor] || '#888';
-  }, [colorHexByName]);
+    return AURA_HEX[colorName as AuraColor] || '#888';
+  }, []);
 
   // We can keep search and local state here
   const [search, setSearch] = useState('');
@@ -714,7 +719,7 @@ export default function PerfumeMaster() {
               )}>
               All
             </button>
-            {(allColors.map(c => c.name) as AuraColor[]).map(color => (
+            {auraColors.map(color => (
               <button key={color} onClick={() => setFilterAura(filterAura === color ? '' : color)}
                 className={cn(
                   'w-7 h-7 rounded-md border-2 transition-all flex items-center justify-center',
@@ -1415,7 +1420,7 @@ export default function PerfumeMaster() {
           families={familiesQuery.data || []}
           subFamilies={subFamiliesQuery.data || []}
           auras={aurasQuery.data || []}
-          colors={allColors}
+          auraColors={auraColors}
           brands={brands}
         />
       )}
@@ -1429,7 +1434,7 @@ export default function PerfumeMaster() {
           families={familiesQuery.data || []}
           subFamilies={subFamiliesQuery.data || []}
           auras={aurasQuery.data || []}
-          colors={allColors}
+          auraColors={auraColors}
           brands={brands}
           editPerfume={editTarget}
         />

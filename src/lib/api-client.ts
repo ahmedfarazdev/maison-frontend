@@ -1,6 +1,5 @@
 import type {
   ApiResponse, ApiListResponse, Perfume, PerfumeSearchResult, AuraDefinition, Family, SubFamily,
-  ColorDefinition,
   VaultLocation, Supplier, Syringe, PackagingSKU, SealedBottle, DecantBottle,
   PackagingStock, Order, Job, SubscriptionCycle, PrintJob, DashboardKPIs,
   InventoryAlert, CriticalPerfume,
@@ -299,14 +298,6 @@ function mapSubFamily(row: any): SubFamily {
   };
 }
 
-function mapColorDefinition(row: any): ColorDefinition {
-  return {
-    id: normalizeString(row?.id) || undefined,
-    name: normalizeString(row?.name),
-    hex_code: normalizeString(row?.hexCode ?? row?.hex_code, '#888888'),
-  };
-}
-
 function mapOrderDefinition(row: any): OrderDefinition {
   return {
     id: normalizeString(row?.id),
@@ -477,14 +468,6 @@ const toSupplierPayload = (input: any, options?: { ensureSupplierId?: boolean })
   const totalItems = input?.totalItems ?? input?.total_items;
   if (totalItems !== undefined) payload.totalItems = totalItems === null ? null : Number(totalItems);
 
-  return payload;
-};
-
-const toColorPayload = (input: any): Record<string, unknown> => {
-  const payload: Record<string, unknown> = {};
-  if (input?.name !== undefined) payload.name = input.name;
-  const hexCode = input?.hexCode ?? input?.hex_code;
-  if (hexCode !== undefined) payload.hexCode = hexCode;
   return payload;
 };
 
@@ -678,15 +661,6 @@ export const api = {
         const res = await apiGet<any>('/taxonomies/sub-families');
         const items = normalizeList(res);
         return wrapList(items.map(mapSubFamily));
-      } catch {
-        return wrapList([]);
-      }
-    },
-    colors: async () => {
-      try {
-        const res = await apiGet<any>('/colors');
-        const items = normalizeList(res);
-        return wrapList(items.map(mapColorDefinition));
       } catch {
         return wrapList([]);
       }
@@ -1545,20 +1519,6 @@ export const api = {
         return wrapList(res.map(mapBrand));
       },
     },
-    colors: {
-      create: async (d: any) => {
-        const res = await apiPost<any>('/colors', toColorPayload(d));
-        return wrapOne(mapColorDefinition(res));
-      },
-      update: async (id: string, d: any) => {
-        const res = await apiPatch<any>(`/colors/${encodeURIComponent(id)}`, toColorPayload(d));
-        return wrapOne(mapColorDefinition(res));
-      },
-      delete: async (id: string) => {
-        await apiDelete(`/colors/${encodeURIComponent(id)}`);
-        return wrapOne({ id });
-      },
-    },
     reconciliation: {
       createSession: async (d: any) => apiPost<any>('/inventory/reconciliation', d),
       listSessions: async () => wrapList([]),
@@ -1633,17 +1593,6 @@ export const api = {
       save2mlTiers: (items: any[]) => apiPost('/pricing-rules/two-ml-tiers', items),
     },
     taxonomies: {
-      colors: {
-        create: async (d: any) => {
-          const res = await apiPost<any>('/colors', toColorPayload(d));
-          return mapColorDefinition(res);
-        },
-        update: async (id: string, d: any) => {
-          const res = await apiPatch<any>(`/colors/${id}`, toColorPayload(d));
-          return mapColorDefinition(res);
-        },
-        delete: (id: string) => apiDelete(`/colors/${id}`),
-      },
       auras: {
         create: async (d: any) => {
           const res = await apiPost<any>('/taxonomies/auras', toAuraPayload(d));
@@ -1672,9 +1621,10 @@ export const api = {
         delete: (id: string) => api.taxonomies.subFamilies.delete(id),
       },
       filterTags: {
-        create: async (d: any) => api.taxonomies.filterTags.create(d),
-        update: async (id: string, d: any) => api.taxonomies.filterTags.update(id, d),
-        delete: (id: string) => api.taxonomies.filterTags.delete(id),
+        create: (d: any) => apiPost('/taxonomies/filter-tags', d),
+        sync: (d: { category: string; values: string[] }) => apiPost('/taxonomies/filter-tags/sync', d),
+        update: (id: string, d: any) => apiPatch(`/taxonomies/filter-tags/${id}`, d),
+        delete: (id: string) => apiDelete(`/taxonomies/filter-tags/${id}`),
       },
     },
     packagingSkus: {

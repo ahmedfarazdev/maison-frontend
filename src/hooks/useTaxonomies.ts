@@ -28,14 +28,6 @@ export function useTaxonomies() {
     },
   });
 
-  const colorsQuery = useQuery({
-    queryKey: ['colors'],
-    queryFn: async () => {
-      const res = await api.master.colors();
-      return res.data;
-    },
-  });
-
   const createAura = useMutation({
     mutationFn: (data: any) => api.mutations.taxonomies.auras.create(data),
     meta: { successMessage: 'Aura created successfully' },
@@ -54,23 +46,6 @@ export function useTaxonomies() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['auras'] }),
   });
 
-  const createColor = useMutation({
-    mutationFn: (data: any) => api.mutations.taxonomies.colors.create(data),
-    meta: { successMessage: 'Color created successfully' },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['colors'] }),
-  });
-
-  const updateColor = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) => api.mutations.taxonomies.colors.update(id, data),
-    meta: { successMessage: 'Color updated successfully' },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['colors'] }),
-  });
-
-  const deleteColor = useMutation({
-    mutationFn: (id: string) => api.mutations.taxonomies.colors.delete(id),
-    meta: { successMessage: 'Color deleted successfully' },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['colors'] }),
-  });
 
   const createFamily = useMutation({
     mutationFn: (data: any) => api.mutations.taxonomies.families.create(data),
@@ -117,23 +92,28 @@ export function useTaxonomies() {
   });
 
   const createFilterTag = useMutation({
-    mutationFn: (data: any) => api.mutations.taxonomies.filterTags.create(data),
+    mutationFn: (data: any) => api.taxonomies.filterTags.create(data),
     meta: { successMessage: 'Tag created successfully' },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['filterTags'] }),
   });
 
   const deleteFilterTag = useMutation({
-    mutationFn: (id: string) => api.mutations.taxonomies.filterTags.delete(id),
+    mutationFn: (id: string) => api.taxonomies.filterTags.delete(id),
     meta: { successMessage: 'Tag deleted successfully' },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['filterTags'] }),
   });
 
+  const syncFilterTags = useMutation({
+    mutationFn: (data: { category: string; values: string[] }) => api.taxonomies.filterTags.sync(data),
+    meta: { successMessage: 'Tags synchronized successfully' },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['filterTags'] }),
+  });
+
   return {
-    aurasQuery, familiesQuery, subFamiliesQuery, colorsQuery, filterTagsQuery,
-    createColor, updateColor, deleteColor,
+    aurasQuery, familiesQuery, subFamiliesQuery, filterTagsQuery,
     createAura, updateAura, deleteAura,
     createFamily, updateFamily, deleteFamily,
     createSubFamily, updateSubFamily, deleteSubFamily,
-    createFilterTag, deleteFilterTag,
+    createFilterTag, deleteFilterTag, syncFilterTags,
   };
 }

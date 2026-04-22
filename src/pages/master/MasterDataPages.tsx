@@ -32,6 +32,7 @@ import { useLocations } from '@/hooks/useLocations';
 import { api } from '@/lib/api-client';
 import { mockFilterConfig } from '@/lib/mock-data';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import {
   BarChart3,
   Check,
@@ -67,14 +68,15 @@ import {
   X,
   Zap,
   RefreshCw,
+  PlusCircle,
 } from 'lucide-react';
 import PropagationOverlay from '@/components/master/PropagationOverlay';
 import type {
   AlaCartePricingMultiplier,
   AuraColor,
   AuraDefinition,
-  ColorDefinition,
   Family,
+  FilterConfig,
   MlDiscount,
   PackagingSKU,
   PricingRuleSet,
@@ -106,6 +108,8 @@ const AURA_BORDER: Record<AuraColor, string> = {
   Blue: 'border-blue-200 dark:border-blue-800', Pink: 'border-pink-200 dark:border-pink-800',
   Violet: 'border-violet-200 dark:border-violet-800',
 };
+
+const DEFAULT_AURA_COLORS: AuraColor[] = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Pink', 'Violet'];
 
 const makeUniqueId = (name: string, existing: string[]) => {
   const base = name
@@ -144,7 +148,7 @@ function InlineTextarea({ value, onChange, className, rows = 2 }: {
 
 // ---- Aura Definitions (Editable via Dialog) ----
 export function AuraDefinitions() {
-  const { aurasQuery, colorsQuery, createAura, updateAura, deleteAura } = useTaxonomies();
+  const { aurasQuery, filterTagsQuery, createAura, updateAura, deleteAura } = useTaxonomies();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -153,15 +157,29 @@ export function AuraDefinitions() {
   const [editTargetId, setEditTargetId] = useState<string | null>(null);
 
   const allAuras = (aurasQuery.data as AuraDefinition[]) || [];
-  const allColors = (colorsQuery.data as ColorDefinition[]) || [];
+  const auraColorOptions = useMemo<AuraColor[]>(() => {
+    const tags = (filterTagsQuery.data as Array<{ category: string; value: string }> | undefined) ?? [];
+    const values = tags
+      .filter((tag) => tag.category === 'aura_colors')
+      .map((tag) => tag.value?.trim())
+      .filter((value): value is string => Boolean(value));
+
+    const unique = Array.from(new Set(values));
+    return unique.length > 0 ? unique : DEFAULT_AURA_COLORS;
+  }, [filterTagsQuery.data]);
+
   const colorHexByName = useMemo(() => {
     const map: Record<string, string> = {};
-    for (const color of allColors) {
-      map[color.name] = color.hex_code;
+    for (const color of auraColorOptions) {
+      map[color] = AURA_HEX[color] || '#888888';
     }
     return map;
-  }, [allColors]);
-  const defaultColor = allColors[0] ?? { name: 'Red', hex_code: '#E53935' };
+  }, [auraColorOptions]);
+  const defaultColorName = auraColorOptions[0] ?? DEFAULT_AURA_COLORS[0];
+  const defaultColor = {
+    name: defaultColorName,
+    hex_code: AURA_HEX[defaultColorName] || '#E53935',
+  };
   const isLoading = aurasQuery.isLoading;
   const hasError = Boolean(aurasQuery.error);
   const isPending = createAura.isPending || updateAura.isPending || deleteAura.isPending;
@@ -426,7 +444,7 @@ export function AuraDefinitions() {
                     updateField('color_hex', colorHexByName[selectedName] || editForm.color_hex || defaultColor.hex_code);
                   }}
                   className="w-full bg-background border border-input rounded-md px-2.5 py-1.5 text-sm">
-                  {allColors.map(c => <option key={c.id || c.name} value={c.name}>{c.name}</option>)}
+                  {auraColorOptions.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
@@ -435,7 +453,7 @@ export function AuraDefinitions() {
                   <input type="color" value={editForm.color_hex || '#888888'}
                     onChange={e => updateField('color_hex', e.target.value)}
                     className="w-8 h-8 rounded border border-border cursor-pointer" />
-                  <InlineInput value={editForm.color_hex || ''} onChange={v => updateField('color_hex', v)} className="max-w-[120px] font-mono" />
+                  <InlineInput value={editForm.color_hex || ''} onChange={v => updateField('color_hex', v)} className="max-w-30 font-mono" />
                 </div>
               </div>
               <div>
@@ -542,7 +560,7 @@ export function FragranceFamilies() {
   const {
     familiesQuery,
     subFamiliesQuery,
-    colorsQuery,
+    filterTagsQuery,
     createFamily,
     updateFamily,
     deleteFamily,
@@ -571,17 +589,27 @@ export function FragranceFamilies() {
 
   const families = (familiesQuery.data as Family[]) || [];
   const subs = (subFamiliesQuery.data as SubFamily[]) || [];
-  const allColors = (colorsQuery.data as ColorDefinition[]) || [];
+  const auraColorOptions = useMemo<AuraColor[]>(() => {
+    const tags = (filterTagsQuery.data as Array<{ category: string; value: string }> | undefined) ?? [];
+    const values = tags
+      .filter((tag) => tag.category === 'aura_colors')
+      .map((tag) => tag.value?.trim())
+      .filter((value): value is string => Boolean(value));
+
+    const unique = Array.from(new Set(values));
+    return unique.length > 0 ? unique : DEFAULT_AURA_COLORS;
+  }, [filterTagsQuery.data]);
+
   const colorHexByName = useMemo(() => {
     const map: Record<string, string> = {};
-    for (const color of allColors) {
-      map[color.name] = color.hex_code;
+    for (const color of auraColorOptions) {
+      map[color] = AURA_HEX[color] || '#888888';
     }
     return map;
-  }, [allColors]);
-  const defaultColor = allColors[0]?.name || 'Red';
+  }, [auraColorOptions]);
+  const defaultColor = auraColorOptions[0] || DEFAULT_AURA_COLORS[0];
 
-  const isLoading = familiesQuery.isLoading || subFamiliesQuery.isLoading;
+  const isLoading = familiesQuery.isLoading || subFamiliesQuery.isLoading || filterTagsQuery.isLoading;
   const isSaving =
     createFamily.isPending ||
     updateFamily.isPending ||
@@ -996,7 +1024,7 @@ export function FragranceFamilies() {
                 <select value={subForm.aura_color || defaultColor}
                   onChange={e => setSubForm(p => ({ ...p, aura_color: e.target.value as AuraColor, aura_name: e.target.value }))}
                   className="w-full bg-background border border-input rounded-md px-2.5 py-1.5 text-sm">
-                  {allColors.map(c => <option key={c.id || c.name} value={c.name}>{c.name}</option>)}
+                  {auraColorOptions.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
@@ -1095,39 +1123,32 @@ export function FragranceFamilies() {
 
 // ---- Filters & Tags (Editable — DB-backed) ----
 export function FiltersAndTags() {
-  const { filterTagsQuery, createFilterTag, deleteFilterTag } = useTaxonomies();
+  const { filterTagsQuery, createFilterTag, deleteFilterTag, syncFilterTags } = useTaxonomies();
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  // New category creation state
+  const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
   const filters = useMemo(() => {
-    const grouped: FilterConfig = {
-      aura_colors: [],
-      scent_types: [],
-      seasons: [],
-      occasions: [],
-      concentrations: [],
-      genders: [],
-      personalities: [],
-      main_families: [],
-      sub_families: [],
-    };
+    const grouped: Record<string, string[]> = {};
 
     if (filterTagsQuery.data) {
       for (const tag of filterTagsQuery.data) {
-        const cat = tag.category as keyof FilterConfig;
-        if (grouped[cat]) {
-          grouped[cat].push(tag.value);
-        }
+        const cat = tag.category;
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(String(tag.value));
       }
     }
 
     return grouped;
   }, [filterTagsQuery.data]);
 
-  const sections: { title: string; key: keyof FilterConfig; icon: React.ReactNode; colorFn?: (v: string) => string }[] = [
-    { title: 'Aura Colors', key: 'aura_colors', icon: <Sparkles className="w-4 h-4" />, colorFn: (v) => AURA_HEX[v as AuraColor] || '#888' },
+  const baseSections = useMemo(() => [
+    { title: 'Aura Colors', key: 'aura_colors', icon: <Sparkles className="w-4 h-4" />, colorFn: (v: string) => AURA_HEX[v as AuraColor] || '#888' },
     { title: 'Scent Types', key: 'scent_types', icon: <Wind className="w-4 h-4" /> },
     { title: 'Seasons', key: 'seasons', icon: <Sun className="w-4 h-4" /> },
     { title: 'Occasions', key: 'occasions', icon: <Heart className="w-4 h-4" /> },
@@ -1136,12 +1157,37 @@ export function FiltersAndTags() {
     { title: 'Personalities', key: 'personalities', icon: <Zap className="w-4 h-4" /> },
     { title: 'Main Families', key: 'main_families', icon: <Layers className="w-4 h-4" /> },
     { title: 'Sub-Families', key: 'sub_families', icon: <Tag className="w-4 h-4" /> },
-  ];
+  ], []);
+
+  const sections = useMemo(() => {
+    const discoveredKeys = Object.keys(filters);
+    const existingKeys = new Set(baseSections.map(s => s.key));
+    
+    const addedSections = discoveredKeys
+      .filter(k => !existingKeys.has(k))
+      .map(k => ({
+        title: k.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+        key: k,
+        icon: <Tag className="w-4 h-4" />
+      }));
+
+    return [...baseSections, ...addedSections];
+  }, [filters, baseSections]);
 
   const startEditSection = (key: string) => {
     setEditingKey(key);
-    setEditValues([...(filters[key as keyof typeof filters] as string[])]);
+    setEditValues([...(filters[key] || [])]);
     setNewTagInput('');
+  };
+
+  const handleCreateCategory = () => {
+    if (!newCategoryName.trim()) return;
+    const key = newCategoryName.trim().toLowerCase().replace(/\s+/g, '_');
+    setEditingKey(key);
+    setEditValues([]);
+    setNewTagInput('');
+    setNewCategoryName('');
+    setIsAddCategoryOpen(false);
   };
 
   const addTag = () => {
@@ -1158,29 +1204,10 @@ export function FiltersAndTags() {
     if (!editingKey) return;
     try {
       setIsSaving(true);
-
-      const existingTags = filterTagsQuery.data?.filter(t => t.category === editingKey) || [];
-      const existingValues = existingTags.map(t => t.value);
-
-      // Calculate delta
-      const toDelete = existingTags.filter(t => !editValues.includes(t.value));
-      const toCreate = editValues.filter(v => !existingValues.includes(v));
-
-      // Execute removals
-      for (const tag of toDelete) {
-        await deleteFilterTag.mutateAsync(tag.id);
-      }
-
-      // Execute additions
-      for (let i = 0; i < toCreate.length; i++) {
-        await createFilterTag.mutateAsync({
-          category: editingKey,
-          value: toCreate[i],
-          label: toCreate[i],
-          sortOrder: editValues.indexOf(toCreate[i])
-        });
-      }
-
+      await syncFilterTags.mutateAsync({
+        category: editingKey,
+        values: editValues
+      });
       setEditingKey(null);
       toast.success('Tags updated successfully');
     } catch (e) {
@@ -1199,6 +1226,12 @@ export function FiltersAndTags() {
         breadcrumbs={[{ label: 'Master Data' }, { label: 'Filters & Tags' }]}
       />
       <div className="p-6">
+        <div className="flex justify-end mb-6">
+          <Button className="bg-gold hover:bg-gold/90 text-gold-foreground gap-2" onClick={() => setIsAddCategoryOpen(true)}>
+            <PlusCircle className="w-4 h-4" /> Add New Category
+          </Button>
+        </div>
+
         {filterTagsQuery.isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -1210,7 +1243,7 @@ export function FiltersAndTags() {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
               {sections.map(sec => {
                 const isEditing = editingKey === sec.key;
-                const values = isEditing ? editValues : (filters[sec.key] as string[]);
+                const values = isEditing ? editValues : (filters[sec.key] || []);
 
                 return (
                   <div key={sec.key} className="bg-card border border-border rounded-xl overflow-hidden">
@@ -1278,7 +1311,7 @@ export function FiltersAndTags() {
               <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-3">
                 {sections.map(sec => (
                   <div key={sec.key} className="text-center">
-                    <div className="text-lg font-bold font-mono">{(filters[sec.key] as string[]).length}</div>
+                    <div className="text-lg font-bold font-mono">{(filters[sec.key] || []).length}</div>
                     <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{sec.title}</div>
                   </div>
                 ))}
@@ -1287,6 +1320,36 @@ export function FiltersAndTags() {
           </>
         )}
       </div>
+
+      {/* Add New Category Dialog */}
+      <Dialog open={isAddCategoryOpen} onOpenChange={setIsAddCategoryOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add New Filter Category</DialogTitle>
+            <DialogDescription>
+              Define a new category to group tags (e.g., Vibe, Intensity, Projection).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">Category Name</label>
+            <input
+              type="text"
+              value={newCategoryName}
+              onChange={e => setNewCategoryName(e.target.value)}
+              placeholder="e.g. Sillage or Vibe"
+              className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold/30"
+              autoFocus
+              onKeyDown={e => e.key === 'Enter' && handleCreateCategory()}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddCategoryOpen(false)}>Cancel</Button>
+            <Button className="bg-gold hover:bg-gold/90 text-gold-foreground" onClick={handleCreateCategory} disabled={!newCategoryName.trim()}>
+              Create Category
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

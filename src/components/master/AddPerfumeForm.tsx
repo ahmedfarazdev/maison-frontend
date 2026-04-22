@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   generateMasterId,
+  AURA_COLORS,
   CONCENTRATIONS,
   HYPE_LEVELS,
   SCENT_TYPES,
@@ -31,7 +32,7 @@ import {
   DEFAULT_ML_DISCOUNTS,
   DEFAULT_ALACARTE_MULT,
 } from '@/lib/pricing-engine';
-import type { AuraColor, ColorDefinition, Concentration, HypeLevel, ScentType, DecantPricing, Perfume, Brand } from '@/types';
+import type { AuraColor, Concentration, HypeLevel, ScentType, DecantPricing, Perfume, Brand } from '@/types';
 import {
   X, ChevronRight, ChevronLeft, Check, Copy, Sparkles,
   Droplets, Tag, BookOpen, DollarSign, FileText, Search, MapPin,
@@ -52,6 +53,16 @@ const STEPS = [
   { id: 4, label: 'Story & Content', icon: BookOpen, description: 'Scent signature, verse, and story' },
   { id: 5, label: 'Review', icon: FileText, description: 'Review and confirm' },
 ];
+
+const AURA_HEX: Record<AuraColor, string> = {
+  Red: '#C41E3A',
+  Blue: '#1B6B93',
+  Violet: '#4A0E4E',
+  Green: '#2D6A4F',
+  Yellow: '#D4A017',
+  Orange: '#E07C24',
+  Pink: '#D63384',
+};
 
 // ---- Form state type ----
 interface FormState {
@@ -134,8 +145,8 @@ interface AddPerfumeFormProps {
   isPending?: boolean;
   families: { main_family_id: string; name: string }[];
   subFamilies: { sub_family_id: string; main_family_id: string; name: string }[];
-  auras: { aura_id: string; name: string; color_hex: string }[];
-  colors: ColorDefinition[];
+  auras: { aura_id: string; name: string; color_hex: string; color?: AuraColor }[];
+  auraColors: AuraColor[];
   brands: Brand[];
   editPerfume?: Perfume;
 }
@@ -145,7 +156,7 @@ export interface PerfumeImageSubmitOptions {
   existingImageUrls: string[];
 }
 
-export default function AddPerfumeForm({ onClose, onSubmit, isPending, families, subFamilies, auras, colors, brands, editPerfume }: AddPerfumeFormProps) {
+export default function AddPerfumeForm({ onClose, onSubmit, isPending, families, subFamilies, auras, auraColors, brands, editPerfume }: AddPerfumeFormProps) {
   const isEditMode = !!editPerfume;
 
   // Fetch notes library for linked dropdowns
@@ -168,14 +179,11 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
   const subHypeMultipliers = pricingRules?.subHypeMultipliers ?? DEFAULT_SUB_HYPE_MULT;
   const mlDiscounts = pricingRules?.mlDiscounts ?? DEFAULT_ML_DISCOUNTS;
   const alacarteMultipliers = pricingRules?.alacarteMultipliers ?? DEFAULT_ALACARTE_MULT;
-  const colorHexByName = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const color of colors) {
-      map[color.name] = color.hex_code;
-    }
-    return map;
-  }, [colors]);
-  const colorNames = useMemo(() => colors.map(c => c.name), [colors]);
+  const colorHexByName = useMemo<Record<AuraColor, string>>(() => AURA_HEX, []);
+  const colorNames = useMemo(() => {
+    const unique = Array.from(new Set(auraColors.filter(Boolean)));
+    return unique.length > 0 ? unique : AURA_COLORS;
+  }, [auraColors]);
 
   // Build initial state from editPerfume if provided
   const editInitialState: FormState | null = editPerfume ? {
@@ -322,7 +330,9 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
   useEffect(() => {
     if (form.aura_color) {
       const selectedHex = colorHexByName[form.aura_color]?.toLowerCase();
-      const matchingAura = auras.find(a => a.color_hex?.toLowerCase() === selectedHex);
+      const matchingAura =
+        auras.find((a) => a.color?.toLowerCase() === form.aura_color.toLowerCase()) ||
+        auras.find((a) => a.color_hex?.toLowerCase() === selectedHex);
       if (matchingAura && form.aura_id !== matchingAura.aura_id) {
         setForm(prev => ({ ...prev, aura_id: matchingAura.aura_id }));
       }

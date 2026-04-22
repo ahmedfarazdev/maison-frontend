@@ -42,7 +42,6 @@ const PAGES: PageItem[] = [
   { label: 'Perfume Master', path: '/master/perfumes', icon: BookOpen, keywords: ['perfume', 'master', 'catalog'] },
   { label: 'Brands', path: '/master/brands', icon: Building2, keywords: ['brand', 'house'] },
   { label: 'Aura Definitions', path: '/master/auras', icon: Layers, keywords: ['aura', 'color', 'energy'] },
-  { label: 'Colors', path: '/master/colors', icon: Sparkles, keywords: ['colors', 'palette', 'hex'] },
   { label: 'Fragrance Families', path: '/master/families', icon: Tag, keywords: ['family', 'fragrance'] },
   { label: 'Filters & Tags', path: '/master/filters', icon: Shield, keywords: ['filter', 'tag'] },
   { label: 'Pricing Rules', path: '/master/pricing', icon: Tag, keywords: ['pricing', 'surcharge', 'discount'] },
