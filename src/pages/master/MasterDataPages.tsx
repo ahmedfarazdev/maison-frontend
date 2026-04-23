@@ -1146,6 +1146,7 @@ export function FiltersAndTags() {
   // New category creation state
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<FilterSection | null>(null);
 
   const groupedFilters = useMemo(() => {
     const grouped: Record<string, string[]> = {};
@@ -1241,6 +1242,29 @@ export function FiltersAndTags() {
     setNewTagInput('');
   };
 
+  const confirmDeleteCategory = async () => {
+    if (!deleteCategoryTarget) return;
+    try {
+      setIsSaving(true);
+      await syncFilterTags.mutateAsync({
+        category: deleteCategoryTarget.key,
+        values: []
+      });
+      setFilters(prev => {
+        const next = { ...prev };
+        delete next[deleteCategoryTarget.key];
+        return next;
+      });
+      toast.success(`Category "${deleteCategoryTarget.title}" deleted successfully`);
+      setDeleteCategoryTarget(null);
+    } catch (e) {
+      console.error('[Filters] Delete category failed:', e);
+      toast.error('Failed to delete category');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const removeTag = (idx: number) => {
     setEditValues(prev => prev.filter((_, i) => i !== idx));
   };
@@ -1316,11 +1340,16 @@ export function FiltersAndTags() {
                       <h3 className="text-sm font-semibold">{sec.title}</h3>
                       <span className="text-[10px] font-mono text-muted-foreground ml-auto">{values.length} items</span>
                       {!isEditing ? (
-                        <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => startEditSection(sec.key)}>
-                          <Edit className="w-3 h-3" />
-                        </Button>
+                        <div className="flex gap-1 ml-auto">
+                          <Button size="sm" variant="ghost" className="h-6 w-6 p-0 hover:text-destructive" onClick={() => setDeleteCategoryTarget(sec)}>
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => startEditSection(sec.key)}>
+                            <Edit className="w-3 h-3" />
+                          </Button>
+                        </div>
                       ) : (
-                        <div className="flex gap-1">
+                        <div className="flex gap-1 ml-auto">
                           <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingKey(null)} disabled={isSaving}>
                             <X className="w-3 h-3" />
                           </Button>
@@ -1415,6 +1444,27 @@ export function FiltersAndTags() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Delete Category Confirmation */}
+      <AlertDialog open={!!deleteCategoryTarget} onOpenChange={(open) => { if (!open && !isSaving) setDeleteCategoryTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Category {deleteCategoryTarget?.title}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the category and all its {filters[deleteCategoryTarget?.key || '']?.length || 0} tags. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSaving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteCategory}
+              className="bg-destructive hover:bg-destructive/90 text-white"
+              disabled={isSaving}
+            >
+              {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes, Delete Category'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
