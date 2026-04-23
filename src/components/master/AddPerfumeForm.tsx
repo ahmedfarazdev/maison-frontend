@@ -229,6 +229,7 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
   } : null;
 
   const [step, setStep] = useState(0);
+  const [isManualSurcharge, setIsManualSurcharge] = useState(false);
   const [form, setForm] = useState<FormState>(editInitialState || INITIAL_STATE);
   const [pendingImageFiles, setPendingImageFiles] = useState<File[]>([]);
   const [brandSearch, setBrandSearch] = useState(editPerfume?.brand || '');
@@ -287,15 +288,26 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
   }, [form.price_per_ml, autoCalcPricePerMl, form.hype_level, surchargeTiers, subHypeMultipliers]);
 
   // Auto-set surcharge_category when tier is determined
+  // Auto-selection of surcharge tier
   useEffect(() => {
-    if (autoSurchargeTier && !form.surcharge_category) {
+    if (autoSurchargeTier && !isManualSurcharge) {
       setForm(prev => ({
         ...prev,
         surcharge_category: autoSurchargeTier.s_category as FormState['surcharge_category'],
         surcharge: autoSurchargeTier.s_price.toString(),
       }));
     }
-  }, [autoSurchargeTier, form.surcharge_category]);
+  }, [autoSurchargeTier, isManualSurcharge]);
+
+  // Sync surcharge amount if category is set but price is stale (e.g. rules updated)
+  useEffect(() => {
+    if (form.surcharge_category && surchargeTiers.length > 0) {
+      const currentTier = surchargeTiers.find(t => t.s_category === form.surcharge_category);
+      if (currentTier && form.surcharge !== currentTier.s_price.toString()) {
+        update('surcharge', currentTier.s_price.toString());
+      }
+    }
+  }, [form.surcharge_category, surchargeTiers]);
 
   // ---- Auto-calculate decant prices ----
   const autoDecantPrices = useMemo(() => {
@@ -395,6 +407,7 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
   // Auto-fill surcharge
   const applyAutoSurcharge = useCallback(() => {
     if (!autoSurchargeTier) return;
+    setIsManualSurcharge(false);
     setForm(prev => ({
       ...prev,
       surcharge_category: autoSurchargeTier.s_category as FormState['surcharge_category'],
@@ -941,11 +954,14 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
                 <div className="grid grid-cols-6 gap-2">
                   {(['S0', 'S1', 'S2', 'S3', 'S4', 'S5'] as const).map(s => {
                     const isAuto = autoSurchargeTier?.s_category === s;
-                    const prices: Record<string, number> = { S0: 0, S1: 25, S2: 50, S3: 75, S4: 100, S5: 125 };
+                    const tierData = surchargeTiers.find(t => t.s_category === s);
+                    const price = tierData?.s_price ?? 0;
+                    
                     return (
                       <button key={s} onClick={() => {
+                        setIsManualSurcharge(true);
                         update('surcharge_category', s);
-                        update('surcharge', prices[s].toString());
+                        update('surcharge', price.toString());
                       }}
                         className={cn(
                           'relative h-16 rounded-lg border-2 transition-all flex flex-col items-center justify-center',
@@ -959,14 +975,14 @@ export default function AddPerfumeForm({ onClose, onSubmit, isPending, families,
                           <span className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-gold rounded-full animate-pulse" />
                         )}
                         <span className="text-sm font-bold">{s}</span>
-                        <span className="text-[10px] text-muted-foreground">AED {prices[s]}</span>
+                        <span className="text-[10px] text-muted-foreground">AED {price}</span>
                       </button>
                     );
                   })}
                 </div>
                 {autoSurchargeTier && (
                   <p className="text-[10px] text-muted-foreground mt-2">
-                    Formula: price/ml ({form.price_per_ml || autoCalcPricePerMl}) × hype mult → {autoSurchargeTier.s_category}
+                    Formula: price/ml ({form.price_per_ml || autoCalcPricePerMl}) × hype mult ({subHypeMultipliers.find(m => m.hype === form.hype_level)?.multiplier || 1}) → {autoSurchargeTier.s_category}
                   </p>
                 )}
               </div>

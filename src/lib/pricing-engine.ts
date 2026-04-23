@@ -18,11 +18,11 @@ export interface SurchargeTier {
 
 export const DEFAULT_SURCHARGES: SurchargeTier[] = [
   { from_price_per_ml: 0, to_price_per_ml: 3, s_category: 'S0', s_price: 0 },
-  { from_price_per_ml: 3, to_price_per_ml: 6, s_category: 'S1', s_price: 25 },
-  { from_price_per_ml: 6, to_price_per_ml: 9, s_category: 'S2', s_price: 50 },
-  { from_price_per_ml: 9, to_price_per_ml: 12, s_category: 'S3', s_price: 75 },
-  { from_price_per_ml: 12, to_price_per_ml: 15, s_category: 'S4', s_price: 100 },
-  { from_price_per_ml: 15, to_price_per_ml: null, s_category: 'S5', s_price: 125 },
+  { from_price_per_ml: 3, to_price_per_ml: 6, s_category: 'S1', s_price: 33 },
+  { from_price_per_ml: 6, to_price_per_ml: 9, s_category: 'S2', s_price: 66 },
+  { from_price_per_ml: 9, to_price_per_ml: 12, s_category: 'S3', s_price: 99 },
+  { from_price_per_ml: 12, to_price_per_ml: 15, s_category: 'S4', s_price: 132 },
+  { from_price_per_ml: 15, to_price_per_ml: null, s_category: 'S5', s_price: 165 },
 ];
 
 // ---- S — Hype Multiplier (Subscription) ----
@@ -98,18 +98,28 @@ export function determineSurchargeTier(
   surcharges: SurchargeTier[] = DEFAULT_SURCHARGES,
   hypeMultipliers: HypeMultiplier[] = DEFAULT_SUB_HYPE_MULT,
 ): SurchargeTier {
+  if (!surcharges || surcharges.length === 0) return { from_price_per_ml: 0, to_price_per_ml: 0, s_category: 'N/A', s_price: 0 };
+
   // Get hype multiplier for the S number calculation
   const hypeMult = hypeMultipliers.find(m => m.hype === hypeLevel)?.multiplier || 1;
   const adjustedPricePerMl = pricePerMl * hypeMult;
 
-  // Find the matching surcharge tier using the adjusted price/ml
-  for (const tier of surcharges) {
-    if (adjustedPricePerMl >= tier.from_price_per_ml &&
-        (tier.to_price_per_ml === null || adjustedPricePerMl < tier.to_price_per_ml)) {
-      return tier;
+  // 1. Sort surcharges by from_price_per_ml ascending to ensure correct matching
+  const sorted = [...surcharges].sort((a, b) => a.from_price_per_ml - b.from_price_per_ml);
+
+  // 2. Find the highest tier whose from_price_per_ml is <= adjustedPricePerMl
+  // This handles gaps by picking the last valid tier that "started"
+  let match = sorted[0];
+  for (const tier of sorted) {
+    if (adjustedPricePerMl >= tier.from_price_per_ml) {
+      match = tier;
+    } else {
+      // Since it's sorted, we can stop once we exceed the price
+      break;
     }
   }
-  return surcharges[surcharges.length - 1];
+
+  return match;
 }
 
 /**
@@ -119,45 +129,32 @@ export function determineSurchargeTier(
  */
 export function getAlacarteMultiplier(
   hypeLevel: HypeLevel,
-  multipliers: HypeMultiplier[] = DEFAULT_ALACARTE_MULT,
+  multipliers: HypeMultiplier[] = [],
 ): number {
-  return multipliers.find(m => m.hype === hypeLevel)?.multiplier || 3.5;
+  return multipliers.find(m => m.hype === hypeLevel)?.multiplier || 0;
 }
 
 /**
  * Calculate decant size price (A La Carte / One-Time)
- * Formula from Google Sheet:
- * =ROUNDUP(((price_per_ml * alacarte_multiplier) * ml_size) * (1 - discount_factor))
- *
- * For 1ml (Premium): price is INCREASED by 10% (premium markup)
- * For 2ml: base price (0% discount)
- * For 3ml+: price is DECREASED by discount_factor
+ * Formula: price_per_ml * alacarte_multiplier * ml_size
+ * 
+ * Note: Discounts are handled on the storefront, not here.
  */
 export function calcDecantPrice(
   pricePerMl: number,
   mlSize: number,
   hypeLevel: HypeLevel,
-  mlDiscounts: MlDiscount[] = DEFAULT_ML_DISCOUNTS,
-  alacarteMultipliers: HypeMultiplier[] = DEFAULT_ALACARTE_MULT,
+  mlDiscounts: MlDiscount[] = [],
+  alacarteMultipliers: HypeMultiplier[] = [],
 ): number {
-  const alacarteMult = getAlacarteMultiplier(hypeLevel, alacarteMultipliers);
-  const discount = mlDiscounts.find(d => d.ml_size === mlSize);
-
-  if (!discount) return 0;
+  const alacarteMult = alacarteMultipliers.find(m => m.hype === hypeLevel)?.multiplier;
+  
+  if (!alacarteMult) return 0;
 
   const basePrice = pricePerMl * alacarteMult * mlSize;
 
-  let finalPrice: number;
-  if (discount.label === 'Premium') {
-    // 1ml premium: price * (1 + premium_factor)
-    finalPrice = Math.ceil(basePrice * (1 + discount.discount_factor));
-  } else {
-    // Discount: price * (1 - discount_factor)
-    finalPrice = Math.ceil(basePrice * (1 - discount.discount_factor));
-  }
-
-  // Minimum pricing rule: no decant size should ever be below AED 10
-  return Math.max(finalPrice, 10);
+  // Round up to the nearest whole AED
+  return Math.ceil(basePrice);
 }
 
 /**

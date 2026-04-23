@@ -4,7 +4,7 @@
 // ALL pages are now fully editable with inline editing
 // ============================================================
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { PageHeader, SectionCard, StatusBadge } from '@/components/shared';
 import { Button } from '@/components/ui/button';
 import {
@@ -1123,17 +1123,31 @@ export function FragranceFamilies() {
 
 // ---- Filters & Tags (Editable — DB-backed) ----
 export function FiltersAndTags() {
-  const { filterTagsQuery, createFilterTag, deleteFilterTag, syncFilterTags } = useTaxonomies();
+  const { filterTagsQuery, syncFilterTags } = useTaxonomies();
+  const newTagInputRef = useRef<HTMLInputElement>(null);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [draftCategoryKey, setDraftCategoryKey] = useState<string | null>(null);
+  const [filters, setFilters] = useState<Record<string, string[]>>({});
+
+  // Auto-focus the tag input when entering edit mode
+  useEffect(() => {
+    if (editingKey) {
+      // Small timeout to ensure the DOM element is rendered
+      const timer = setTimeout(() => {
+        newTagInputRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [editingKey]);
 
   // New category creation state
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
 
-  const filters = useMemo(() => {
+  const groupedFilters = useMemo(() => {
     const grouped: Record<string, string[]> = {};
 
     if (filterTagsQuery.data) {
@@ -1147,7 +1161,26 @@ export function FiltersAndTags() {
     return grouped;
   }, [filterTagsQuery.data]);
 
-  const baseSections = useMemo(() => [
+  useEffect(() => {
+    setFilters(prev => {
+      const next = { ...groupedFilters };
+
+      if (draftCategoryKey && editingKey === draftCategoryKey && prev[draftCategoryKey] && !next[draftCategoryKey]) {
+        next[draftCategoryKey] = prev[draftCategoryKey];
+      }
+
+      return next;
+    });
+  }, [groupedFilters, draftCategoryKey, editingKey]);
+
+  type FilterSection = {
+    title: string;
+    key: string;
+    icon: React.ReactNode;
+    colorFn?: (v: string) => string;
+  };
+
+  const baseSections = useMemo<FilterSection[]>(() => [
     { title: 'Aura Colors', key: 'aura_colors', icon: <Sparkles className="w-4 h-4" />, colorFn: (v: string) => AURA_HEX[v as AuraColor] || '#888' },
     { title: 'Scent Types', key: 'scent_types', icon: <Wind className="w-4 h-4" /> },
     { title: 'Seasons', key: 'seasons', icon: <Sun className="w-4 h-4" /> },
@@ -1159,20 +1192,30 @@ export function FiltersAndTags() {
     { title: 'Sub-Families', key: 'sub_families', icon: <Tag className="w-4 h-4" /> },
   ], []);
 
-  const sections = useMemo(() => {
+  const sections = useMemo<FilterSection[]>(() => {
     const discoveredKeys = Object.keys(filters);
     const existingKeys = new Set(baseSections.map(s => s.key));
-    
+
     const addedSections = discoveredKeys
       .filter(k => !existingKeys.has(k))
-      .map(k => ({
+      .map<FilterSection>(k => ({
         title: k.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
         key: k,
         icon: <Tag className="w-4 h-4" />
       }));
 
-    return [...baseSections, ...addedSections];
-  }, [filters, baseSections]);
+    const hasDraftKey = draftCategoryKey && !existingKeys.has(draftCategoryKey) && !discoveredKeys.includes(draftCategoryKey);
+    const draftSection = hasDraftKey
+      ? ([{
+        title: draftCategoryKey.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+        key: draftCategoryKey,
+        icon: <Tag className="w-4 h-4" />,
+      }] as FilterSection[])
+      : [];
+
+    // Order: Draft first, then added/dynamic categories, then base categories
+    return [...draftSection, ...addedSections.reverse(), ...baseSections];
+  }, [filters, baseSections, draftCategoryKey]);
 
   const startEditSection = (key: string) => {
     setEditingKey(key);
@@ -1183,6 +1226,8 @@ export function FiltersAndTags() {
   const handleCreateCategory = () => {
     if (!newCategoryName.trim()) return;
     const key = newCategoryName.trim().toLowerCase().replace(/\s+/g, '_');
+    setFilters(prev => ({ ...prev, [key]: prev[key] || [] }));
+    setDraftCategoryKey(key);
     setEditingKey(key);
     setEditValues([]);
     setNewTagInput('');
@@ -1202,17 +1247,36 @@ export function FiltersAndTags() {
 
   const saveSection = async () => {
     if (!editingKey) return;
+    const normalizedValues = Array.from(
+      new Set(
+        editValues
+          .map((value) => value.trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (normalizedValues.length === 0) {
+      toast.error('Add at least one tag value before saving.');
+      return;
+    }
+
     try {
       setIsSaving(true);
       await syncFilterTags.mutateAsync({
         category: editingKey,
-        values: editValues
+        values: normalizedValues
       });
+      setFilters(prev => ({ ...prev, [editingKey]: normalizedValues }));
+      setEditValues(normalizedValues);
+      if (draftCategoryKey === editingKey) {
+        setDraftCategoryKey(null);
+      }
       setEditingKey(null);
       toast.success('Tags updated successfully');
     } catch (e) {
       console.error('[Filters] Save failed:', e);
-      toast.error('Failed to update tags');
+      const message = e instanceof Error ? e.message : 'Failed to update tags';
+      toast.error(message);
     } finally {
       setIsSaving(false);
     }
@@ -1291,6 +1355,7 @@ export function FiltersAndTags() {
                       {isEditing && (
                         <div className="flex items-center gap-2 mt-3">
                           <input type="text" value={newTagInput} onChange={e => setNewTagInput(e.target.value)}
+                            ref={newTagInputRef}
                             onKeyDown={e => e.key === 'Enter' && addTag()}
                             placeholder="Add new tag..."
                             className="flex-1 bg-background border border-input rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold/30"

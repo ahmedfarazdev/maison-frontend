@@ -148,6 +148,12 @@ export interface AuraDefinition {
   color_hex: string;
 }
 
+export interface ColorDefinition {
+  id?: string;
+  name: string;
+  hex_code: string;
+}
+
 export interface Family {
   id?: string;
   main_family_id: string;
@@ -188,7 +194,6 @@ export interface FilterConfig {
   personalities: Personality[];
   main_families: string[];
   sub_families: string[];
-  [key: string]: string[] | any[];
 }
 
 // ---- Pricing Rules Schema ----

@@ -3,6 +3,11 @@ import { PageHeader } from '@/components/shared';
 import { api } from '@/lib/api-client';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import type { OrderDefinition } from '@/types';
+import {
+  WorkflowBuilder,
+  type DraftStatus,
+  type DraftTransition,
+} from '@/components/order-definitions';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,8 +21,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import {
-  ArrowDown,
-  ArrowUp,
   ChevronRight,
   Loader2,
   Plus,
@@ -26,23 +29,6 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-
-type DraftStatus = {
-  id?: string;
-  statusCode: string;
-  label: string;
-  colorToken: string;
-  isTerminal: boolean;
-  active: boolean;
-};
-
-type DraftTransition = {
-  id?: string;
-  fromStatusCode: string;
-  toStatusCode: string;
-  condition: string;
-  active: boolean;
-};
 
 type DraftOrderDefinition = {
   id?: string;
@@ -54,6 +40,13 @@ type DraftOrderDefinition = {
   active: boolean;
   statuses: DraftStatus[];
   transitions: DraftTransition[];
+};
+
+const createTempId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -77,7 +70,7 @@ const createEmptyDraft = (): DraftOrderDefinition => ({
   iconToken: '',
   colorToken: 'blue',
   active: true,
-  statuses: [{ statusCode: 'pending', label: 'pending', colorToken: 'yellow', isTerminal: false, active: true }],
+  statuses: [{ clientTempId: createTempId(), statusCode: 'pending', label: 'pending', colorToken: 'yellow', isTerminal: false, active: true }],
   transitions: [],
 });
 
@@ -119,42 +112,11 @@ export default function OrderDefinitions() {
   const { data, isLoading, error, refetch } = useApiQuery<OrderDefinition[]>(() => api.orderDefinitions.list(), []);
   const definitions = data ?? [];
 
-  const editorStatusCodes = useMemo(
-    () => (editor?.statuses ?? []).map((status) => status.statusCode.trim()).filter(Boolean),
-    [editor],
-  );
-
-  const updateStatus = (index: number, patch: Partial<DraftStatus>) => {
-    setEditor((prev) => {
-      if (!prev) return prev;
-      const statuses = prev.statuses.map((status, i) => (i === index ? { ...status, ...patch } : status));
-      return { ...prev, statuses };
-    });
-  };
-
-  const updateTransition = (index: number, patch: Partial<DraftTransition>) => {
-    setEditor((prev) => {
-      if (!prev) return prev;
-      const transitions = prev.transitions.map((transition, i) => (i === index ? { ...transition, ...patch } : transition));
-      return { ...prev, transitions };
-    });
-  };
-
-  const moveStatus = (index: number, direction: -1 | 1) => {
-    setEditor((prev) => {
-      if (!prev) return prev;
-
-      const nextIndex = index + direction;
-      if (nextIndex < 0 || nextIndex >= prev.statuses.length) {
-        return prev;
-      }
-
-      const nextStatuses = prev.statuses.slice();
-      const [current] = nextStatuses.splice(index, 1);
-      nextStatuses.splice(nextIndex, 0, current);
-
-      return { ...prev, statuses: nextStatuses };
-    });
+  const updateEditor = <K extends keyof DraftOrderDefinition>(
+    key: K,
+    value: DraftOrderDefinition[K]
+  ) => {
+    setEditor((prev) => (prev ? { ...prev, [key]: value } : prev));
   };
 
   const saveEditor = async () => {
@@ -219,7 +181,7 @@ export default function OrderDefinitions() {
 
       await refetch();
       setEditor(null);
-      toast.success('Order definitions saved');
+      toast.success('Order definition saved');
     } catch (e: any) {
       toast.error(e?.message || 'Failed to save order definition');
     } finally {
@@ -297,6 +259,7 @@ export default function OrderDefinitions() {
       {editor && (
         <Card className="bg-card/70 border-gold/30">
           <CardContent className="p-5 space-y-5">
+            {/* Header */}
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold">{editor.id ? 'Edit Order Definition' : 'Create Order Definition'}</h3>
               <Button size="sm" variant="ghost" onClick={() => setEditor(null)} disabled={saving}>
@@ -304,12 +267,13 @@ export default function OrderDefinitions() {
               </Button>
             </div>
 
+            {/* Metadata Form */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Code</label>
                 <input
                   value={editor.code}
-                  onChange={(e) => setEditor((prev) => (prev ? { ...prev, code: e.target.value } : prev))}
+                  onChange={(e) => updateEditor('code', e.target.value)}
                   disabled={Boolean(editor.id) || saving}
                   className="mt-1 w-full h-9 px-3 text-sm bg-background border border-input rounded-md"
                   placeholder="one_time"
@@ -319,7 +283,7 @@ export default function OrderDefinitions() {
                 <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Name</label>
                 <input
                   value={editor.name}
-                  onChange={(e) => setEditor((prev) => (prev ? { ...prev, name: e.target.value } : prev))}
+                  onChange={(e) => updateEditor('name', e.target.value)}
                   disabled={saving}
                   className="mt-1 w-full h-9 px-3 text-sm bg-background border border-input rounded-md"
                   placeholder="One-Time Order"
@@ -329,7 +293,7 @@ export default function OrderDefinitions() {
                 <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Color Token</label>
                 <input
                   value={editor.colorToken}
-                  onChange={(e) => setEditor((prev) => (prev ? { ...prev, colorToken: e.target.value } : prev))}
+                  onChange={(e) => updateEditor('colorToken', e.target.value)}
                   disabled={saving}
                   className="mt-1 w-full h-9 px-3 text-sm bg-background border border-input rounded-md"
                   placeholder="blue"
@@ -339,7 +303,7 @@ export default function OrderDefinitions() {
                 <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Icon Token</label>
                 <input
                   value={editor.iconToken}
-                  onChange={(e) => setEditor((prev) => (prev ? { ...prev, iconToken: e.target.value } : prev))}
+                  onChange={(e) => updateEditor('iconToken', e.target.value)}
                   disabled={saving}
                   className="mt-1 w-full h-9 px-3 text-sm bg-background border border-input rounded-md"
                   placeholder="shopping-cart"
@@ -349,7 +313,7 @@ export default function OrderDefinitions() {
                 <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Description</label>
                 <textarea
                   value={editor.description}
-                  onChange={(e) => setEditor((prev) => (prev ? { ...prev, description: e.target.value } : prev))}
+                  onChange={(e) => updateEditor('description', e.target.value)}
                   disabled={saving}
                   className="mt-1 w-full min-h-[72px] px-3 py-2 text-sm bg-background border border-input rounded-md"
                 />
@@ -358,167 +322,32 @@ export default function OrderDefinitions() {
                 <input
                   type="checkbox"
                   checked={editor.active}
-                  onChange={(e) => setEditor((prev) => (prev ? { ...prev, active: e.target.checked } : prev))}
+                  onChange={(e) => updateEditor('active', e.target.checked)}
                   disabled={saving}
                 />
                 Active
               </label>
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Statuses</p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-xs gap-1"
-                  disabled={saving}
-                  onClick={() => setEditor((prev) => (prev
-                    ? {
-                        ...prev,
-                        statuses: [...prev.statuses, { statusCode: '', label: '', colorToken: '', isTerminal: false, active: true }],
-                      }
-                    : prev))}
-                >
-                  <Plus className="w-3 h-3" /> Add Status
-                </Button>
-              </div>
+            {/* Workflow Builder */}
+            <WorkflowBuilder
+              statuses={editor.statuses}
+              transitions={editor.transitions}
+              onStatusesChange={(statuses) => updateEditor('statuses', statuses)}
+              onTransitionsChange={(transitions) => updateEditor('transitions', transitions)}
+              disabled={saving}
+            />
 
-              {editor.statuses.map((status, index) => (
-                <div key={`${status.id ?? 'new'}-${index}`} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_120px_120px_120px_auto] gap-2 items-center">
-                  <input
-                    value={status.statusCode}
-                    onChange={(e) => updateStatus(index, { statusCode: e.target.value })}
-                    disabled={saving}
-                    className="h-9 px-3 text-sm bg-background border border-input rounded-md"
-                    placeholder="status_code"
-                  />
-                  <input
-                    value={status.label}
-                    onChange={(e) => updateStatus(index, { label: e.target.value })}
-                    disabled={saving}
-                    className="h-9 px-3 text-sm bg-background border border-input rounded-md"
-                    placeholder="Label"
-                  />
-                  <input
-                    value={status.colorToken}
-                    onChange={(e) => updateStatus(index, { colorToken: e.target.value })}
-                    disabled={saving}
-                    className="h-9 px-3 text-sm bg-background border border-input rounded-md"
-                    placeholder="color"
-                  />
-                  <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={status.isTerminal}
-                      onChange={(e) => updateStatus(index, { isTerminal: e.target.checked })}
-                      disabled={saving}
-                    />
-                    Terminal
-                  </label>
-                  <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={status.active}
-                      onChange={(e) => updateStatus(index, { active: e.target.checked })}
-                      disabled={saving}
-                    />
-                    Active
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <Button size="icon" variant="ghost" disabled={saving || index === 0} onClick={() => moveStatus(index, -1)}>
-                      <ArrowUp className="w-3.5 h-3.5" />
-                    </Button>
-                    <Button size="icon" variant="ghost" disabled={saving || index === editor.statuses.length - 1} onClick={() => moveStatus(index, 1)}>
-                      <ArrowDown className="w-3.5 h-3.5" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      disabled={saving || editor.statuses.length === 1}
-                      onClick={() => setEditor((prev) => (prev ? { ...prev, statuses: prev.statuses.filter((_, i) => i !== index) } : prev))}
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Transitions</p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-xs gap-1"
-                  disabled={saving}
-                  onClick={() => setEditor((prev) => (prev
-                    ? {
-                        ...prev,
-                        transitions: [...prev.transitions, { fromStatusCode: '', toStatusCode: '', condition: '', active: true }],
-                      }
-                    : prev))}
-                >
-                  <Plus className="w-3 h-3" /> Add Transition
-                </Button>
-              </div>
-
-              {editor.transitions.map((transition, index) => (
-                <div key={`${transition.id ?? 'new'}-${index}`} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_120px_auto] gap-2 items-center">
-                  <select
-                    value={transition.fromStatusCode}
-                    onChange={(e) => updateTransition(index, { fromStatusCode: e.target.value })}
-                    disabled={saving}
-                    className="h-9 px-3 text-sm bg-background border border-input rounded-md"
-                  >
-                    <option value="">From</option>
-                    {editorStatusCodes.map((statusCode) => (
-                      <option key={`from-${statusCode}`} value={statusCode}>{statusCode}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={transition.toStatusCode}
-                    onChange={(e) => updateTransition(index, { toStatusCode: e.target.value })}
-                    disabled={saving}
-                    className="h-9 px-3 text-sm bg-background border border-input rounded-md"
-                  >
-                    <option value="">To</option>
-                    {editorStatusCodes.map((statusCode) => (
-                      <option key={`to-${statusCode}`} value={statusCode}>{statusCode}</option>
-                    ))}
-                  </select>
-                  <input
-                    value={transition.condition}
-                    onChange={(e) => updateTransition(index, { condition: e.target.value })}
-                    disabled={saving}
-                    className="h-9 px-3 text-sm bg-background border border-input rounded-md"
-                    placeholder="Condition (optional)"
-                  />
-                  <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={transition.active}
-                      onChange={(e) => updateTransition(index, { active: e.target.checked })}
-                      disabled={saving}
-                    />
-                    Active
-                  </label>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    disabled={saving}
-                    onClick={() => setEditor((prev) => (prev ? { ...prev, transitions: prev.transitions.filter((_, i) => i !== index) } : prev))}
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex items-center justify-end gap-2">
-              <Button variant="outline" disabled={saving} onClick={() => setEditor(null)}>Cancel</Button>
-              <Button onClick={() => void saveEditor()} disabled={saving} className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5">
+            {/* Save/Cancel Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-4 border-t border-input">
+              <Button variant="outline" disabled={saving} onClick={() => setEditor(null)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => void saveEditor()}
+                disabled={saving}
+                className="bg-gold hover:bg-gold/90 text-gold-foreground gap-1.5"
+              >
                 {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                 {saving ? 'Saving...' : 'Save Definition'}
               </Button>
