@@ -24,7 +24,7 @@ import {
   mapVaultLocation, mapInventoryBottle, mapDecantBottle, mapOrder,
   mapJob, mapBottleLedgerEvent, mapDecantLedgerEvent, mapSubscriptionCycle,
   mapPrintJob, mapAlert, syringeToDb,
-    brandToDb,
+  brandToDb,
 } from './data-mappers';
 
 // ============================================================
@@ -1682,4 +1682,5 @@ export const api = {
     },
   },
 };
+
 

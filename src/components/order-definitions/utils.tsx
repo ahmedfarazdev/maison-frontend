@@ -2,6 +2,10 @@
  * Utility functions for Order Definition workflow builder
  */
 
+import React from 'react';
+import * as LucideIcons from 'lucide-react';
+import { type LucideProps } from 'lucide-react';
+
 /**
  * Auto-generate status code from label
  * e.g., "Processing Order" -> "processing_order"
@@ -65,3 +69,64 @@ export function getTerminalStyle(colorToken: string | null): string {
   // Add terminal highlight (e.g., amber background for emphasis)
   return `${getColorStyle(colorToken)} bg-opacity-20`;
 }
+
+/**
+ * Predefined set of icons for Order Definitions
+ */
+export const ICON_TOKENS = [
+  'shopping-cart',
+  'package',
+  'truck',
+  'credit-card',
+  'user',
+  'users',
+  'briefcase',
+  'clipboard-list',
+  'check-circle',
+  'clock',
+  'alert-circle',
+  'star',
+  'file-text',
+  'archive',
+  'layers',
+  'activity',
+  'settings',
+  'send',
+  'box',
+  'tag',
+  'map-pin',
+  'calendar',
+  'gift',
+  'shopping-bag',
+  'wallet',
+  'hard-drive',
+];
+
+/**
+ * Helper to render an icon from its token name
+ */
+export function DynamicIcon({ 
+  token, 
+  ...props 
+}: { 
+  token: string | null; 
+} & LucideProps) {
+  const SettingsIcon = LucideIcons.Settings;
+  
+  if (!token) return <SettingsIcon {...props} />;
+
+  // Convert kebab-case to PascalCase for Lucide icons
+  const iconName = token
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('');
+
+  const IconComponent = (LucideIcons as any)[iconName];
+
+  if (!IconComponent) {
+    return <SettingsIcon {...props} />;
+  }
+
+  return <IconComponent {...props} />;
+}
+

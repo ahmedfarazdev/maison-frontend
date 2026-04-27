@@ -1503,12 +1503,12 @@ export default function VaultLocationsPage() {
             const shelf = raw.shelf || '1';
             const slot = raw.slot || '01';
             const locationCode = generateLocationCode(vault, zone, shelf, slot);
-            
+
             // Generate a more robust unique ID
-            const uniqueId = typeof crypto.randomUUID === 'function' 
-              ? crypto.randomUUID() 
+            const uniqueId = typeof crypto.randomUUID === 'function'
+              ? crypto.randomUUID()
               : `loc_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-            
+
             return {
               location_id: uniqueId,
               location_code: locationCode,

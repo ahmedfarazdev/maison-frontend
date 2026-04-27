@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import type { DraftStatus } from './types';
 import { generateStatusCode, COLOR_TOKEN_STYLES, CONDITION_TYPES } from './utils';
+import { ColorPicker } from './ColorPicker';
 
 interface StatusEditModalProps {
   open: boolean;
@@ -91,19 +92,11 @@ export function StatusEditModal({ open, status, onSave, onClose, disabled }: Sta
             <label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
               Color Token
             </label>
-            <select
+            <ColorPicker
               value={draft.colorToken}
-              onChange={(e) => setDraft({ ...draft, colorToken: e.target.value })}
+              onChange={(color) => setDraft({ ...draft, colorToken: color })}
               disabled={disabled}
-              className="mt-1.5 w-full h-9 px-3 text-sm bg-background border border-input rounded-md"
-            >
-              <option value="">— None —</option>
-              {Object.keys(COLOR_TOKEN_STYLES).map((color) => (
-                <option key={color} value={color}>
-                  {color.charAt(0).toUpperCase() + color.slice(1)}
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           <div className="space-y-2">

@@ -7,7 +7,12 @@ import {
   WorkflowBuilder,
   type DraftStatus,
   type DraftTransition,
+  ColorPicker,
+  IconPicker,
+  DynamicIcon,
+  getColorStyle,
 } from '@/components/order-definitions';
+import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -49,19 +54,6 @@ const createTempId = () => {
   return `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  yellow: 'bg-yellow-500/20 text-yellow-300',
-  blue: 'bg-blue-500/20 text-blue-300',
-  purple: 'bg-purple-500/20 text-purple-300',
-  indigo: 'bg-indigo-500/20 text-indigo-300',
-  cyan: 'bg-cyan-500/20 text-cyan-300',
-  pink: 'bg-pink-500/20 text-pink-300',
-  emerald: 'bg-emerald-500/20 text-emerald-300',
-  teal: 'bg-teal-500/20 text-teal-300',
-  green: 'bg-green-500/20 text-green-300',
-  orange: 'bg-orange-500/20 text-orange-300',
-  amber: 'bg-amber-500/20 text-amber-300',
-};
 
 const createEmptyDraft = (): DraftOrderDefinition => ({
   code: '',
@@ -291,22 +283,18 @@ export default function OrderDefinitions() {
               </div>
               <div>
                 <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Color Token</label>
-                <input
+                <ColorPicker
                   value={editor.colorToken}
-                  onChange={(e) => updateEditor('colorToken', e.target.value)}
+                  onChange={(color) => updateEditor('colorToken', color)}
                   disabled={saving}
-                  className="mt-1 w-full h-9 px-3 text-sm bg-background border border-input rounded-md"
-                  placeholder="blue"
                 />
               </div>
-              <div>
+              <div className="md:col-span-2">
                 <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Icon Token</label>
-                <input
+                <IconPicker
                   value={editor.iconToken}
-                  onChange={(e) => updateEditor('iconToken', e.target.value)}
+                  onChange={(icon) => updateEditor('iconToken', icon)}
                   disabled={saving}
-                  className="mt-1 w-full h-9 px-3 text-sm bg-background border border-input rounded-md"
-                  placeholder="shopping-cart"
                 />
               </div>
               <div className="md:col-span-2">
@@ -376,8 +364,8 @@ export default function OrderDefinitions() {
               >
                 <CardContent className="p-5">
                   <div className="flex items-start gap-4">
-                    <div className={`p-2.5 rounded-xl ${STATUS_COLORS[type.colorToken ?? ''] ?? 'bg-muted/30 text-foreground'} border`}>
-                      <Settings className="w-5 h-5" />
+                    <div className={cn("p-2.5 rounded-xl border", getColorStyle(type.colorToken))}>
+                      <DynamicIcon token={type.iconToken} className="w-5 h-5" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -400,7 +388,7 @@ export default function OrderDefinitions() {
                                 <div key={status.id} className="flex items-center gap-1.5">
                                   <Badge
                                     variant="outline"
-                                    className={`text-[9px] px-2 py-0.5 ${STATUS_COLORS[status.colorToken ?? ''] ?? 'bg-muted text-muted-foreground'}`}
+                                    className={cn("text-[9px] px-2 py-0.5", getColorStyle(status.colorToken))}
                                   >
                                     {status.label}
                                   </Badge>
